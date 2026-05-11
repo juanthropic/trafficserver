@@ -55,7 +55,8 @@ SRC_FILES_HRW4U=src/visitor.py \
 	src/sandbox.py \
 	src/kg_visitor.py \
 	src/ast_nodes.py \
-	src/ast_visitor.py
+	src/ast_visitor.py \
+	src/ast_validator.py
 
 ALL_HRW4U_FILES=$(SHARED_FILES) $(UTILS_FILES) $(SRC_FILES_HRW4U)
 
