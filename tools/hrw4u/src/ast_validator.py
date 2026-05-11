@@ -41,8 +41,20 @@ from hrw4u.ast_nodes import (
     VarDecl,
     ProcedureDecl,
     Section,
+    Assignment,
+    FunctionCall,
+    IfBlock,
+    Break,
+    Comparison,
+    LogicalOp,
+    NotOp,
+    BoolLiteral,
+    IdentCondition,
     LiteralStringValue,
     IdentValue,
+    IPValue,
+    ParamRef,
+    RegexValue,
     ProcParam,
 )
 
@@ -71,6 +83,7 @@ def validate(
         proc_search_paths=list(proc_search_paths) if proc_search_paths else [],
         debug=debug)
     _pass1_declarations(ast, ctx)
+    _pass2_semantics(ast, ctx)
 
 
 @dataclass
@@ -272,3 +285,280 @@ def _validate_section_type(node: Section, ctx: _ValidationContext) -> None:
     except ValueError:
         valid_sections = [s.value for s in SectionType]
         ctx.error(node.line, 0, f"Invalid section name: '{node.type}'. Valid sections: {', '.join(valid_sections)}")
+
+
+# ---------------------------------------------------------------------------
+# Pass 2: Semantic validation (section bodies)
+# ---------------------------------------------------------------------------
+
+
+def _pass2_semantics(ast: HRW4UAST, ctx: _ValidationContext) -> None:
+    for node in ast.body:
+        if isinstance(node, Section):
+            try:
+                ctx.current_section = SectionType(node.type)
+            except ValueError:
+                continue
+            _validate_body(node.body, ctx)
+
+
+def _validate_body(body: tuple, ctx: _ValidationContext) -> None:
+    for node in body:
+        if isinstance(node, Assignment):
+            _validate_assignment(node, ctx)
+        elif isinstance(node, FunctionCall):
+            _validate_statement_function(node, ctx)
+        elif isinstance(node, IfBlock):
+            _validate_if_block(node, ctx)
+        elif isinstance(node, Break):
+            pass
+
+
+def _validate_assignment(node: Assignment, ctx: _ValidationContext) -> None:
+    lhs = _target_to_str(node.target)
+    rhs = _value_to_str(node.value, node.line, ctx)
+    if rhs is None:
+        return
+
+    try:
+        if node.operator == "=":
+            ctx.symbol_resolver.resolve_assignment(lhs, rhs, ctx.current_section)
+        else:
+            ctx.symbol_resolver.resolve_add_assignment(lhs, rhs, ctx.current_section)
+    except (SymbolResolutionError, Exception) as e:
+        ctx.error_from_exc(node.line, 0, e)
+
+
+def _validate_statement_function(node: FunctionCall, ctx: _ValidationContext) -> None:
+    name = node.name
+    if name in ctx.proc_registry:
+        _validate_proc_call(node, ctx)
+        return
+    if '::' in name:
+        ctx.error(node.line, 0, f"unknown procedure '{name}': not loaded via 'use'")
+        return
+    args = [_value_to_str(a, node.line, ctx) or "" for a in node.args]
+    try:
+        ctx.symbol_resolver.resolve_statement_func(name, args, ctx.current_section)
+    except (SymbolResolutionError, Exception) as e:
+        ctx.error_from_exc(node.line, 0, e)
+
+
+def _validate_proc_call(node: FunctionCall, ctx: _ValidationContext) -> None:
+    sig = ctx.proc_registry[node.name]
+
+    if node.name in ctx.proc_call_stack:
+        cycle = ' -> '.join([*ctx.proc_call_stack, node.name])
+        ctx.error(node.line, 0, f"circular procedure call: {cycle}")
+        return
+
+    required = sum(1 for p in sig.params if p.default is None)
+    n_args = len(node.args)
+    if not (required <= n_args <= len(sig.params)):
+        expected = f"{required}-{len(sig.params)}" if required < len(sig.params) else str(len(sig.params))
+        ctx.error(node.line, 0, f"procedure '{sig.qualified_name}': expected {expected} arg(s), got {n_args}")
+        return
+
+    saved_stack = ctx.proc_call_stack
+    saved_bindings = ctx.proc_bindings
+    ctx.proc_call_stack = [*saved_stack, node.name]
+
+    bindings: dict[str, str] = {}
+    for i, param in enumerate(sig.params):
+        if i < n_args:
+            bindings[param.name] = _value_to_str(node.args[i], node.line, ctx) or ""
+        elif param.default is not None:
+            bindings[param.name] = _value_to_str(param.default, node.line, ctx) or ""
+
+    ctx.proc_bindings = bindings
+    _validate_body(sig.body, ctx)
+    ctx.proc_call_stack = saved_stack
+    ctx.proc_bindings = saved_bindings
+
+
+def _validate_if_block(node: IfBlock, ctx: _ValidationContext) -> None:
+    _validate_condition(node.condition, ctx)
+    _validate_body(node.body, ctx)
+    for branch in node.elif_branches:
+        _validate_condition(branch.condition, ctx)
+        _validate_body(branch.body, ctx)
+    _validate_body(node.else_body, ctx)
+
+
+def _validate_condition(cond, ctx: _ValidationContext) -> None:
+    if isinstance(cond, Comparison):
+        _validate_comparison(cond, ctx)
+    elif isinstance(cond, LogicalOp):
+        _validate_condition(cond.left, ctx)
+        _validate_condition(cond.right, ctx)
+    elif isinstance(cond, NotOp):
+        _validate_condition(cond.operand, ctx)
+    elif isinstance(cond, BoolLiteral):
+        pass
+    elif isinstance(cond, IdentCondition):
+        _validate_ident_condition(cond, ctx)
+    elif isinstance(cond, FunctionCall):
+        _validate_condition_function(cond, ctx)
+
+
+def _validate_comparison(node: Comparison, ctx: _ValidationContext) -> None:
+    if isinstance(node.left, IdentValue):
+        _resolve_identifier(node.left.raw, node.line, ctx)
+    elif isinstance(node.left, FunctionCall):
+        _validate_condition_function(node.left, ctx)
+
+    if isinstance(node.right, RegexValue):
+        try:
+            _regex_validator(node.right.raw)
+        except Exception as e:
+            ctx.error_from_exc(node.line, 0, e)
+    elif isinstance(node.right, LiteralStringValue):
+        _validate_string_interpolation(node.right.raw, node.line, ctx)
+    elif isinstance(node.right, tuple):
+        for item in node.right:
+            if isinstance(item, LiteralStringValue):
+                _validate_string_interpolation(item.raw, node.line, ctx)
+
+
+def _validate_ident_condition(node: IdentCondition, ctx: _ValidationContext) -> None:
+    _resolve_identifier(node.name, node.line, ctx)
+
+
+def _resolve_identifier(name: str, line: int, ctx: _ValidationContext) -> None:
+    if not name:
+        return
+
+    if ctx.symbol_resolver.symbol_for(name):
+        return
+
+    if '.' not in name and ':' not in name:
+        error = SymbolResolutionError(
+            "identifier", f"Undefined variable: '{name}'. Variables must be declared in a VARS section.")
+        suggestions = ctx.symbol_resolver.get_variable_suggestions(name, ctx.current_section)
+        if suggestions:
+            error.add_symbol_suggestion(suggestions)
+        ctx.error_from_exc(line, 0, error)
+        return
+
+    try:
+        ctx.symbol_resolver.resolve_condition(name, ctx.current_section)
+    except SymbolResolutionError as e:
+        ctx.error_from_exc(line, 0, e)
+
+
+def _validate_condition_function(node: FunctionCall, ctx: _ValidationContext) -> None:
+    args = [_value_to_str(a, node.line, ctx) or "" for a in node.args]
+    try:
+        ctx.symbol_resolver.resolve_function(node.name, args, strip_quotes=True)
+    except (SymbolResolutionError, Exception) as e:
+        ctx.error_from_exc(node.line, 0, e)
+
+
+def _validate_string_interpolation(s: str, line: int, ctx: _ValidationContext) -> None:
+    if '{' not in s:
+        return
+
+    inner = s
+    if ctx.proc_bindings:
+        inner = _PARAM_REF_PATTERN.sub(lambda m: ctx.proc_bindings.get(m.group(1), m.group(0)), inner)
+
+    for m in _SUBSTITUTE_PATTERN.finditer(inner):
+        try:
+            if m.group("escaped"):
+                continue
+            if m.group("func"):
+                func_name = m.group("func").strip()
+                arg_str = m.group("args").strip()
+                args = _parse_function_args(arg_str) if arg_str else []
+                ctx.symbol_resolver.resolve_function(func_name, args, strip_quotes=False)
+            elif m.group("var"):
+                var_name = m.group("var").strip()
+                ctx.symbol_resolver.resolve_condition(var_name, ctx.current_section)
+        except Exception as e:
+            ctx.error(line, 0, f"symbol error in {{}}: {e}")
+
+
+def _validate_param_ref(node: ParamRef, line: int, ctx: _ValidationContext) -> None:
+    if node.raw not in ctx.proc_bindings:
+        ctx.error(line, 0, f"'${node.raw}' used outside procedure context")
+
+
+def _target_to_str(target) -> str:
+    if target.namespace:
+        return f"{target.namespace}.{target.field}"
+    return target.field
+
+
+def _value_to_str(value, line: int, ctx: _ValidationContext) -> str | None:
+    if isinstance(value, LiteralStringValue):
+        s = value.raw
+        if '{' in s:
+            _validate_string_interpolation(s, line, ctx)
+            if ctx.proc_bindings:
+                s = _PARAM_REF_PATTERN.sub(lambda m: ctx.proc_bindings.get(m.group(1), m.group(0)), s)
+        return f'"{s}"'
+    elif isinstance(value, IdentValue):
+        return value.raw
+    elif isinstance(value, IPValue):
+        return value.raw
+    elif isinstance(value, ParamRef):
+        _validate_param_ref(value, line, ctx)
+        if value.raw in ctx.proc_bindings:
+            return ctx.proc_bindings[value.raw]
+        return None
+    elif isinstance(value, int):
+        return str(value)
+    elif isinstance(value, bool):
+        return "true" if value else "false"
+    elif isinstance(value, tuple):
+        parts = []
+        for item in value:
+            r = _value_to_str(item, line, ctx)
+            if r:
+                parts.append(r)
+        return "{" + ",".join(parts) + "}"
+    return str(value) if value is not None else None
+
+
+def _parse_function_args(arg_str: str) -> list[str]:
+    if not arg_str.strip():
+        return []
+
+    args = []
+    current_arg: list[str] = []
+    paren_depth = 0
+    in_quotes = False
+    quote_char = None
+    i = 0
+
+    while i < len(arg_str):
+        char = arg_str[i]
+
+        if not in_quotes:
+            if char in ('"', "'"):
+                in_quotes = True
+                quote_char = char
+                current_arg.append(char)
+            elif char == '(':
+                paren_depth += 1
+                current_arg.append(char)
+            elif char == ')':
+                paren_depth -= 1
+                current_arg.append(char)
+            elif char == ',' and paren_depth == 0:
+                args.append(''.join(current_arg).strip())
+                current_arg = []
+            else:
+                current_arg.append(char)
+        else:
+            current_arg.append(char)
+            if char == quote_char:
+                if i == 0 or arg_str[i - 1] != '\\':
+                    in_quotes = False
+                    quote_char = None
+        i += 1
+
+    if current_arg:
+        args.append(''.join(current_arg).strip())
+
+    return args
