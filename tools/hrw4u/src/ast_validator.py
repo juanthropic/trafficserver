@@ -253,8 +253,7 @@ def _validate_procedure_decl(node: ProcedureDecl, ctx: _ValidationContext) -> No
     for p in node.params:
         if p.default is None and seen_default:
             ctx.error(
-                node.line, 0,
-                f"procedure '{node.name}': required parameter '${p.name}' must not follow an optional parameter")
+                node.line, 0, f"procedure '{node.name}': required parameter '${p.name}' must not follow an optional parameter")
             return
         if p.default is not None:
             seen_default = True
@@ -432,8 +431,7 @@ def _resolve_identifier(name: str, line: int, ctx: _ValidationContext) -> None:
         return
 
     if '.' not in name and ':' not in name:
-        error = SymbolResolutionError(
-            "identifier", f"Undefined variable: '{name}'. Variables must be declared in a VARS section.")
+        error = SymbolResolutionError("identifier", f"Undefined variable: '{name}'. Variables must be declared in a VARS section.")
         suggestions = ctx.symbol_resolver.get_variable_suggestions(name, ctx.current_section)
         if suggestions:
             error.add_symbol_suggestion(suggestions)
