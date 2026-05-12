@@ -504,10 +504,10 @@ def _value_to_str(value, line: int, ctx: _ValidationContext) -> str | None:
         if value.raw in ctx.proc_bindings:
             return ctx.proc_bindings[value.raw]
         return None
+    elif isinstance(value, bool):  # bool before int: bool is a subclass of int
+        return "true" if value else "false"
     elif isinstance(value, int):
         return str(value)
-    elif isinstance(value, bool):
-        return "true" if value else "false"
     elif isinstance(value, tuple):
         parts = []
         for item in value:
