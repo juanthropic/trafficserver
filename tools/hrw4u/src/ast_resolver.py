@@ -177,11 +177,10 @@ def _register_var_decl(
         return
     try:
         symbol_resolver.declare_variable(decl.name, decl.type_name, decl.slot, scope)
+    except Hrw4uSyntaxError as e:
+        error_collector.add_error(e)
     except Exception as e:
-        if isinstance(e, Hrw4uSyntaxError):
-            error_collector.add_error(e)
-        else:
-            error_collector.add_error(Hrw4uSyntaxError(filename, decl.line, 0, str(e), ""))
+        error_collector.add_error(Hrw4uSyntaxError(filename, decl.line, 0, str(e), ""))
 
 
 def _load_and_resolve_proc_file(
