@@ -43,7 +43,7 @@ _VAR_SECTION_SCOPE: dict[nodes.VarSectionKind, types.VarScope] = {
 class ProcSig:
     """Resolved signature of a declared procedure.
 
-    `body` contains the full AST of the procedure body — external procedures
+    `body` contains the full AST of the procedure body. External procedures
     loaded via `use` directives have real body nodes, not an empty tuple.
     `source_file` is the absolute path for external procedures; the input
     filename for inline declarations.
@@ -62,7 +62,7 @@ class ResolvedAST:
     `frozen=True` prevents field reassignment, but `proc_registry` and
     `symbol_resolver` are mutable objects. Callers must not mutate them.
 
-    Always returned by `resolve()` even when errors were collected — check
+    Always returned by `resolve()` even when errors were collected; check
     `error_collector.has_errors()` before passing this to `validate()`.
     """
 
@@ -84,7 +84,7 @@ def resolve(
     this function appends to it rather than raising.
 
     `proc_search_paths` must be provided when the program contains `use`
-    directives — without it, every `use` produces an error.
+    directives; without it, every `use` produces an error.
 
     Resolution proceeds past errors to collect as many as possible. The
     returned `ResolvedAST` always holds the original `ast` reference unchanged.
