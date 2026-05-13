@@ -34,45 +34,28 @@ from hrw4u.common import RegexPatterns
 from hrw4u.validation import Validator
 from hrw4u.procedures import resolve_use_path
 import hrw4u.types as types
-from hrw4u.ast_nodes import (
-    HRW4UAST,
-    UseDirective,
-    VarSection,
-    VarDecl,
-    ProcedureDecl,
-    Section,
-    Assignment,
-    FunctionCall,
-    IfBlock,
-    Break,
-    Comparison,
-    LogicalOp,
-    NotOp,
-    BoolLiteral,
-    IdentCondition,
-    LiteralStringValue,
-    IdentValue,
-    IPValue,
-    ParamRef,
-    RegexValue,
-    ProcParam,
-)
+import hrw4u.ast_nodes as nodes
 
 _SUBSTITUTE_PATTERN = RegexPatterns.SUBSTITUTE_PATTERN
 _PARAM_REF_PATTERN = re.compile(r'\$([a-zA-Z_][a-zA-Z0-9_-]*)')
 _regex_validator = Validator.regex_pattern()
 
+_VAR_SECTION_SCOPE: dict[nodes.VarSectionKind, types.VarScope] = {
+    nodes.VarSectionKind.TXN: types.VarScope.TXN,
+    nodes.VarSectionKind.SESSION: types.VarScope.SESSION,
+}
+
 
 @dataclass(slots=True)
 class ProcSig:
     qualified_name: str
-    params: list[ProcParam]
+    params: list[nodes.ProcParam]
     body: tuple[Any, ...]
     source_file: str
 
 
 def validate(
-        ast: HRW4UAST,
+        ast: nodes.HRW4UAST,
         filename: str,
         error_collector: ErrorCollector,
         proc_search_paths: list[Path] | None = None,
@@ -112,34 +95,34 @@ class _ValidationContext:
             self.error_collector.add_error(Hrw4uSyntaxError(self.filename, line, column, str(exc), source_line))
 
 
-def _pass1_declarations(ast: HRW4UAST, ctx: _ValidationContext) -> None:
+def _pass1_declarations(ast: nodes.HRW4UAST, ctx: _ValidationContext) -> None:
     seen_sections = False
 
     for node in ast.body:
-        if isinstance(node, UseDirective):
+        if isinstance(node, nodes.UseDirective):
             if seen_sections:
                 ctx.error(node.line, 0, "'use' directives must appear before any section blocks")
                 continue
             _validate_use_directive(node, ctx, load_stack=[])
 
-        elif isinstance(node, ProcedureDecl):
+        elif isinstance(node, nodes.ProcedureDecl):
             if seen_sections:
                 ctx.error(node.line, 0, "'procedure' declarations must appear before any section blocks")
                 continue
             _validate_procedure_decl(node, ctx)
 
-        elif isinstance(node, VarSection):
+        elif isinstance(node, nodes.VarSection):
             if seen_sections:
                 ctx.error(node.line, 0, "Variable section must be first in a section")
                 continue
             _validate_var_section(node, ctx)
 
-        elif isinstance(node, Section):
+        elif isinstance(node, nodes.Section):
             seen_sections = True
             _validate_section_type(node, ctx)
 
 
-def _validate_use_directive(node: UseDirective, ctx: _ValidationContext, load_stack: list[str]) -> None:
+def _validate_use_directive(node: nodes.UseDirective, ctx: _ValidationContext, load_stack: list[str]) -> None:
     if not ctx.proc_search_paths:
         ctx.error(node.line, 0, "use directive requires --procedures-path to be set")
         return
@@ -209,13 +192,13 @@ def _load_proc_file(path: Path, load_stack: list[str], ctx: _ValidationContext, 
                     str(path), proc_ctx.start.line, 0, f"procedure '{name}' already declared in {existing.source_file}", "")
 
             param_list = proc_ctx.paramList()
-            params: list[ProcParam] = []
+            params: list[nodes.ProcParam] = []
             if param_list:
                 for p in param_list.param():
                     default_val = None
                     if p.value():
                         default_val = _extract_default_value(p.value())
-                    params.append(ProcParam(line=proc_ctx.start.line, name=p.IDENT().getText(), default=default_val))
+                    params.append(nodes.ProcParam(line=proc_ctx.start.line, name=p.IDENT().getText(), default=default_val))
 
             ctx.proc_registry[name] = ProcSig(qualified_name=name, params=params, body=(), source_file=str(path))
             found_proc = True
@@ -226,10 +209,10 @@ def _load_proc_file(path: Path, load_stack: list[str], ctx: _ValidationContext, 
     ctx.proc_loaded.add(abs_path)
 
 
-def _extract_default_value(val_ctx) -> LiteralStringValue | IdentValue | int | bool:
+def _extract_default_value(val_ctx) -> nodes.LiteralStringValue | nodes.IdentValue | int | bool:
     text = val_ctx.getText()
     if text.startswith('"') and text.endswith('"'):
-        return LiteralStringValue(raw=text)
+        return nodes.LiteralStringValue(raw=text)
     if text == 'true':
         return True
     if text == 'false':
@@ -237,10 +220,10 @@ def _extract_default_value(val_ctx) -> LiteralStringValue | IdentValue | int | b
     try:
         return int(text)
     except ValueError:
-        return IdentValue(raw=text)
+        return nodes.IdentValue(raw=text)
 
 
-def _validate_procedure_decl(node: ProcedureDecl, ctx: _ValidationContext) -> None:
+def _validate_procedure_decl(node: nodes.ProcedureDecl, ctx: _ValidationContext) -> None:
     if '::' not in node.name:
         ctx.error(node.line, 0, f"procedure name '{node.name}' must be qualified (e.g. 'ns::name')")
         return
@@ -262,12 +245,13 @@ def _validate_procedure_decl(node: ProcedureDecl, ctx: _ValidationContext) -> No
         qualified_name=node.name, params=list(node.params), body=node.body, source_file=ctx.filename)
 
 
-def _validate_var_section(node: VarSection, ctx: _ValidationContext) -> None:
+def _validate_var_section(node: nodes.VarSection, ctx: _ValidationContext) -> None:
+    scope = _VAR_SECTION_SCOPE[node.scope]
     for decl in node.declarations:
-        _validate_var_decl(decl, node.scope, ctx)
+        _validate_var_decl(decl, scope, ctx)
 
 
-def _validate_var_decl(decl: VarDecl, scope: types.VarScope, ctx: _ValidationContext) -> None:
+def _validate_var_decl(decl: nodes.VarDecl, scope: types.VarScope, ctx: _ValidationContext) -> None:
     if '.' in decl.name or ':' in decl.name:
         ctx.error(decl.line, 0, f"Variable name '{decl.name}' cannot contain '.' or ':' characters")
         return
@@ -277,7 +261,7 @@ def _validate_var_decl(decl: VarDecl, scope: types.VarScope, ctx: _ValidationCon
         ctx.error_from_exc(decl.line, 0, e)
 
 
-def _validate_section_type(node: Section, ctx: _ValidationContext) -> None:
+def _validate_section_type(node: nodes.Section, ctx: _ValidationContext) -> None:
     try:
         SectionType(node.type)
     except ValueError:
@@ -290,9 +274,9 @@ def _validate_section_type(node: Section, ctx: _ValidationContext) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _pass2_semantics(ast: HRW4UAST, ctx: _ValidationContext) -> None:
+def _pass2_semantics(ast: nodes.HRW4UAST, ctx: _ValidationContext) -> None:
     for node in ast.body:
-        if isinstance(node, Section):
+        if isinstance(node, nodes.Section):
             try:
                 ctx.current_section = SectionType(node.type)
             except ValueError:
@@ -302,24 +286,24 @@ def _pass2_semantics(ast: HRW4UAST, ctx: _ValidationContext) -> None:
 
 def _validate_body(body: tuple, ctx: _ValidationContext) -> None:
     for node in body:
-        if isinstance(node, Assignment):
+        if isinstance(node, nodes.Assignment):
             _validate_assignment(node, ctx)
-        elif isinstance(node, FunctionCall):
+        elif isinstance(node, nodes.FunctionCall):
             _validate_statement_function(node, ctx)
-        elif isinstance(node, IfBlock):
+        elif isinstance(node, nodes.IfBlock):
             _validate_if_block(node, ctx)
-        elif isinstance(node, Break):
+        elif isinstance(node, nodes.Break):
             pass
 
 
-def _validate_assignment(node: Assignment, ctx: _ValidationContext) -> None:
+def _validate_assignment(node: nodes.Assignment, ctx: _ValidationContext) -> None:
     lhs = _target_to_str(node.target)
     rhs = _value_to_str(node.value, node.line, ctx)
     if rhs is None:
         return
 
     try:
-        if node.operator == "=":
+        if node.operator == nodes.AssignOp.ASSIGN:
             ctx.symbol_resolver.resolve_assignment(lhs, rhs, ctx.current_section)
         else:
             ctx.symbol_resolver.resolve_add_assignment(lhs, rhs, ctx.current_section)
@@ -327,7 +311,7 @@ def _validate_assignment(node: Assignment, ctx: _ValidationContext) -> None:
         ctx.error_from_exc(node.line, 0, e)
 
 
-def _validate_statement_function(node: FunctionCall, ctx: _ValidationContext) -> None:
+def _validate_statement_function(node: nodes.FunctionCall, ctx: _ValidationContext) -> None:
     name = node.name
     if name in ctx.proc_registry:
         _validate_proc_call(node, ctx)
@@ -342,7 +326,7 @@ def _validate_statement_function(node: FunctionCall, ctx: _ValidationContext) ->
         ctx.error_from_exc(node.line, 0, e)
 
 
-def _validate_proc_call(node: FunctionCall, ctx: _ValidationContext) -> None:
+def _validate_proc_call(node: nodes.FunctionCall, ctx: _ValidationContext) -> None:
     sig = ctx.proc_registry[node.name]
 
     if node.name in ctx.proc_call_stack:
@@ -374,7 +358,7 @@ def _validate_proc_call(node: FunctionCall, ctx: _ValidationContext) -> None:
     ctx.proc_bindings = saved_bindings
 
 
-def _validate_if_block(node: IfBlock, ctx: _ValidationContext) -> None:
+def _validate_if_block(node: nodes.IfBlock, ctx: _ValidationContext) -> None:
     _validate_condition(node.condition, ctx)
     _validate_body(node.body, ctx)
     for branch in node.elif_branches:
@@ -384,41 +368,41 @@ def _validate_if_block(node: IfBlock, ctx: _ValidationContext) -> None:
 
 
 def _validate_condition(cond, ctx: _ValidationContext) -> None:
-    if isinstance(cond, Comparison):
+    if isinstance(cond, nodes.Comparison):
         _validate_comparison(cond, ctx)
-    elif isinstance(cond, LogicalOp):
+    elif isinstance(cond, nodes.LogicalOp):
         _validate_condition(cond.left, ctx)
         _validate_condition(cond.right, ctx)
-    elif isinstance(cond, NotOp):
+    elif isinstance(cond, nodes.NotOp):
         _validate_condition(cond.operand, ctx)
-    elif isinstance(cond, BoolLiteral):
+    elif isinstance(cond, nodes.BoolLiteral):
         pass
-    elif isinstance(cond, IdentCondition):
+    elif isinstance(cond, nodes.IdentCondition):
         _validate_ident_condition(cond, ctx)
-    elif isinstance(cond, FunctionCall):
+    elif isinstance(cond, nodes.FunctionCall):
         _validate_condition_function(cond, ctx)
 
 
-def _validate_comparison(node: Comparison, ctx: _ValidationContext) -> None:
-    if isinstance(node.left, IdentValue):
+def _validate_comparison(node: nodes.Comparison, ctx: _ValidationContext) -> None:
+    if isinstance(node.left, nodes.IdentValue):
         _resolve_identifier(node.left.raw, node.line, ctx)
-    elif isinstance(node.left, FunctionCall):
+    elif isinstance(node.left, nodes.FunctionCall):
         _validate_condition_function(node.left, ctx)
 
-    if isinstance(node.right, RegexValue):
+    if isinstance(node.right, nodes.RegexValue):
         try:
             _regex_validator(node.right.raw)
         except Exception as e:
             ctx.error_from_exc(node.line, 0, e)
-    elif isinstance(node.right, LiteralStringValue):
+    elif isinstance(node.right, nodes.LiteralStringValue):
         _validate_string_interpolation(node.right.raw, node.line, ctx)
     elif isinstance(node.right, tuple):
         for item in node.right:
-            if isinstance(item, LiteralStringValue):
+            if isinstance(item, nodes.LiteralStringValue):
                 _validate_string_interpolation(item.raw, node.line, ctx)
 
 
-def _validate_ident_condition(node: IdentCondition, ctx: _ValidationContext) -> None:
+def _validate_ident_condition(node: nodes.IdentCondition, ctx: _ValidationContext) -> None:
     _resolve_identifier(node.name, node.line, ctx)
 
 
@@ -443,7 +427,7 @@ def _resolve_identifier(name: str, line: int, ctx: _ValidationContext) -> None:
         ctx.error_from_exc(line, 0, e)
 
 
-def _validate_condition_function(node: FunctionCall, ctx: _ValidationContext) -> None:
+def _validate_condition_function(node: nodes.FunctionCall, ctx: _ValidationContext) -> None:
     args = [_value_to_str(a, node.line, ctx) or "" for a in node.args]
     try:
         ctx.symbol_resolver.resolve_function(node.name, args, strip_quotes=True)
@@ -475,7 +459,7 @@ def _validate_string_interpolation(s: str, line: int, ctx: _ValidationContext) -
             ctx.error(line, 0, f"symbol error in {{}}: {e}")
 
 
-def _validate_param_ref(node: ParamRef, line: int, ctx: _ValidationContext) -> None:
+def _validate_param_ref(node: nodes.ParamRef, line: int, ctx: _ValidationContext) -> None:
     if node.raw not in ctx.proc_bindings:
         ctx.error(line, 0, f"'${node.raw}' used outside procedure context")
 
@@ -487,18 +471,18 @@ def _target_to_str(target) -> str:
 
 
 def _value_to_str(value, line: int, ctx: _ValidationContext) -> str | None:
-    if isinstance(value, LiteralStringValue):
+    if isinstance(value, nodes.LiteralStringValue):
         s = value.raw
         if '{' in s:
             _validate_string_interpolation(s, line, ctx)
             if ctx.proc_bindings:
                 s = _PARAM_REF_PATTERN.sub(lambda m: ctx.proc_bindings.get(m.group(1), m.group(0)), s)
         return f'"{s}"'
-    elif isinstance(value, IdentValue):
+    elif isinstance(value, nodes.IdentValue):
         return value.raw
-    elif isinstance(value, IPValue):
+    elif isinstance(value, nodes.IPValue):
         return value.raw
-    elif isinstance(value, ParamRef):
+    elif isinstance(value, nodes.ParamRef):
         _validate_param_ref(value, line, ctx)
         if value.raw in ctx.proc_bindings:
             return ctx.proc_bindings[value.raw]
