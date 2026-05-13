@@ -31,6 +31,7 @@ SCRIPT_HRW4U=scripts/hrw4u
 SCRIPT_U4WRH=scripts/u4wrh
 SCRIPT_LSP=scripts/hrw4u-lsp
 SCRIPT_KG=scripts/hrw4u-kg
+SCRIPT_AST=scripts/hrw4u-ast
 
 # Shared source files (will go in hrw4u package)
 SHARED_FILES=src/common.py \
@@ -103,6 +104,7 @@ COPIED_FILES_LSP=$(patsubst src/%, $(PKG_DIR_LSP)/%, $(ALL_LSP_FILES))
 MAIN_HRW4U=$(PKG_DIR_HRW4U)/__main__.py
 MAIN_U4WRH=$(PKG_DIR_U4WRH)/__main__.py
 MAIN_LSP=$(PKG_DIR_LSP)/__main__.py
+MAIN_AST=$(PKG_DIR_HRW4U)/__main_ast__.py
 INIT_HRW4U=$(PKG_DIR_HRW4U)/__init__.py
 INIT_U4WRH=$(PKG_DIR_U4WRH)/__init__.py
 INIT_LSP=$(PKG_DIR_LSP)/__init__.py
@@ -112,7 +114,7 @@ INIT_LSP=$(PKG_DIR_LSP)/__init__.py
 all: gen
 
 # Orchestrate generation then copy sources and drop __main__.py in each package
-gen: gen-fwd gen-inv copy-src $(MAIN_HRW4U) $(MAIN_U4WRH) $(MAIN_LSP) $(INIT_HRW4U) $(INIT_U4WRH) $(INIT_LSP)
+gen: gen-fwd gen-inv copy-src $(MAIN_HRW4U) $(MAIN_U4WRH) $(MAIN_LSP) $(MAIN_AST) $(INIT_HRW4U) $(INIT_U4WRH) $(INIT_LSP)
 
 # Create __main__.py files only when scripts change
 $(MAIN_HRW4U): $(SCRIPT_HRW4U)
@@ -125,6 +127,10 @@ $(MAIN_U4WRH): $(SCRIPT_U4WRH)
 
 $(MAIN_LSP): $(SCRIPT_LSP)
 	@mkdir -p $(PKG_DIR_LSP)
+	cp $< $@
+
+$(MAIN_AST): $(SCRIPT_AST)
+	@mkdir -p $(PKG_DIR_HRW4U)
 	cp $< $@
 
 # Create __init__.py files only when package directories are created
