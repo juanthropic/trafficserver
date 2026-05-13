@@ -26,7 +26,7 @@ from antlr4.error.ErrorStrategy import BailErrorStrategy
 from hrw4u.hrw4uLexer import hrw4uLexer
 from hrw4u.hrw4uParser import hrw4uParser
 from hrw4u.errors import Hrw4uSyntaxError, ThrowingErrorListener, ErrorCollector
-from hrw4u.symbols import SymbolResolver, SymbolResolutionError
+from hrw4u.symbols import SymbolResolver
 from hrw4u.states import SectionType
 from hrw4u.procedures import resolve_use_path
 from hrw4u.ast_visitor import ASTVisitor
