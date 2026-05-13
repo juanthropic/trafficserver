@@ -41,6 +41,14 @@ _VAR_SECTION_SCOPE: dict[nodes.VarSectionKind, types.VarScope] = {
 
 @dataclass(frozen=True, slots=True)
 class ProcSig:
+    """Resolved signature of a declared procedure.
+
+    `body` contains the full AST of the procedure body — external procedures
+    loaded via `use` directives have real body nodes, not an empty tuple.
+    `source_file` is the absolute path for external procedures; the input
+    filename for inline declarations.
+    """
+
     qualified_name: str
     params: tuple[nodes.ProcParam, ...]
     body: tuple[nodes.BodyNode, ...]
@@ -49,6 +57,15 @@ class ProcSig:
 
 @dataclass(frozen=True)
 class ResolvedAST:
+    """Output of the resolution pass: the original AST plus its resolved state.
+
+    `frozen=True` prevents field reassignment, but `proc_registry` and
+    `symbol_resolver` are mutable objects. Callers must not mutate them.
+
+    Always returned by `resolve()` even when errors were collected — check
+    `error_collector.has_errors()` before passing this to `validate()`.
+    """
+
     ast: nodes.HRW4UAST
     proc_registry: dict[str, ProcSig]
     symbol_resolver: SymbolResolver
@@ -60,6 +77,18 @@ def resolve(
         error_collector: ErrorCollector,
         proc_search_paths: list[Path] | None = None,
         debug: bool = False) -> ResolvedAST:
+    """Walk `ast` and produce a fully-resolved state for the validator.
+
+    `ast` must have been produced by `ASTVisitor` from a parsed program.
+    `error_collector` is shared with the caller and may already hold errors;
+    this function appends to it rather than raising.
+
+    `proc_search_paths` must be provided when the program contains `use`
+    directives — without it, every `use` produces an error.
+
+    Resolution proceeds past errors to collect as many as possible. The
+    returned `ResolvedAST` always holds the original `ast` reference unchanged.
+    """
     search_paths: list[Path] = list(proc_search_paths) if proc_search_paths else []
     proc_registry: dict[str, ProcSig] = {}
     proc_loaded: set[str] = set()
