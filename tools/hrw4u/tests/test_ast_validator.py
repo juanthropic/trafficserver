@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 import utils
 from hrw4u.ast_visitor import ASTVisitor
+from hrw4u.ast_resolver import resolve
 from hrw4u.ast_validator import validate
 from hrw4u.errors import ErrorCollector
 
@@ -30,7 +31,9 @@ def _validate_text(text: str, filename: str = "<test>", proc_search_paths: list[
     _, tree = utils.parse_input_text(text)
     ast = ASTVisitor().visit(tree)
     ec = ErrorCollector()
-    validate(ast, filename, ec, proc_search_paths=proc_search_paths)
+    resolved = resolve(ast, filename, ec, proc_search_paths=proc_search_paths)
+    if not ec.has_errors():
+        validate(resolved, filename, ec)
     return ec
 
 
