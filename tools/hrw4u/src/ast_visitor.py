@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from hrw4u.hrw4uVisitor import hrw4uVisitor
 from hrw4u.ast_nodes import *
+from hrw4u.types import VarScope
 
 
 class ASTVisitor(hrw4uVisitor):
@@ -62,14 +63,14 @@ class ASTVisitor(hrw4uVisitor):
 
     def _visit_section(self, ctx) -> VarSection | Section:
         if ctx.varSection() is not None:
-            return self._visit_var_section(ctx.varSection(), "txn")
+            return self._visit_var_section(ctx.varSection(), VarScope.TXN)
         if ctx.sessionVarSection() is not None:
-            return self._visit_var_section(ctx.sessionVarSection(), "session")
+            return self._visit_var_section(ctx.sessionVarSection(), VarScope.SESSION)
         name = ctx.name.text
         body = self._visit_body(ctx.sectionBody())
         return Section(type=name, body=tuple(body), line=ctx.start.line)
 
-    def _visit_var_section(self, ctx, scope) -> VarSection:
+    def _visit_var_section(self, ctx, scope: VarScope) -> VarSection:
         decls = []
         for var_item in ctx.variables().variablesItem():
             if var_item.variableDecl() is not None:

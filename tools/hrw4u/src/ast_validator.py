@@ -263,9 +263,8 @@ def _validate_procedure_decl(node: ProcedureDecl, ctx: _ValidationContext) -> No
 
 
 def _validate_var_section(node: VarSection, ctx: _ValidationContext) -> None:
-    scope = types.VarScope.SESSION if node.scope == "SESSION_VARS" else types.VarScope.TXN
     for decl in node.declarations:
-        _validate_var_decl(decl, scope, ctx)
+        _validate_var_decl(decl, node.scope, ctx)
 
 
 def _validate_var_decl(decl: VarDecl, scope: types.VarScope, ctx: _ValidationContext) -> None:

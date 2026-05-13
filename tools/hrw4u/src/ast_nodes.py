@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Union
 
+from hrw4u.types import VarScope
+
 __all__ = [
     "LiteralStringValue",
     "IdentValue",
@@ -184,7 +186,7 @@ class VarDecl(Node):
 
 @dataclass(frozen=True, kw_only=True)
 class VarSection(Node):
-    scope: str
+    scope: VarScope
     declarations: tuple[VarDecl, ...]
 
 

@@ -16,6 +16,7 @@
 #  limitations under the License.
 
 from hrw4u.ast_nodes import *
+from hrw4u.types import VarScope
 from utils import parse_input_text
 from hrw4u.ast_visitor import ASTVisitor
 
@@ -150,7 +151,7 @@ class TestVarSections:
         ast = _build(src)
         vs = ast.body[0]
         assert isinstance(vs, VarSection)
-        assert vs.scope == "txn"
+        assert vs.scope == VarScope.TXN
         assert len(vs.declarations) == 1
         assert vs.declarations[0].name == "flag"
         assert vs.declarations[0].type_name == "bool"
@@ -161,7 +162,7 @@ class TestVarSections:
         ast = _build(src)
         vs = ast.body[0]
         assert isinstance(vs, VarSection)
-        assert vs.scope == "session"
+        assert vs.scope == VarScope.SESSION
         assert vs.declarations[0].name == "counter"
 
     def test_slot(self):
