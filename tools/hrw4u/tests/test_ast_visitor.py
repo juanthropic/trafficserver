@@ -16,7 +16,6 @@
 #  limitations under the License.
 
 from hrw4u.ast_nodes import *
-from hrw4u.types import VarScope
 from utils import parse_input_text
 from hrw4u.ast_visitor import ASTVisitor
 
@@ -33,7 +32,7 @@ class TestAssignments:
         a = ast.body[0].body[0]
         assert isinstance(a, Assignment)
         assert a.target == Target.from_dotted("inbound.req.X-Foo")
-        assert a.operator == "="
+        assert a.operator == AssignOp.ASSIGN
         assert a.value == LiteralStringValue(raw="test")
 
     def test_bool_value(self):
@@ -50,7 +49,7 @@ class TestAssignments:
     def test_plus_equals(self):
         ast = _build('REMAP {\n    inbound.req.X-Foo += "extra";\n}')
         a = ast.body[0].body[0]
-        assert a.operator == "+="
+        assert a.operator == AssignOp.PLUS_ASSIGN
 
     def test_ip_value(self):
         ast = _build('REMAP {\n    inbound.req.X-IP = 10.0.0.1;\n}')
@@ -151,7 +150,7 @@ class TestVarSections:
         ast = _build(src)
         vs = ast.body[0]
         assert isinstance(vs, VarSection)
-        assert vs.scope == VarScope.TXN
+        assert vs.scope == VarSectionKind.TXN
         assert len(vs.declarations) == 1
         assert vs.declarations[0].name == "flag"
         assert vs.declarations[0].type_name == "bool"
@@ -162,7 +161,7 @@ class TestVarSections:
         ast = _build(src)
         vs = ast.body[0]
         assert isinstance(vs, VarSection)
-        assert vs.scope == VarScope.SESSION
+        assert vs.scope == VarSectionKind.SESSION
         assert vs.declarations[0].name == "counter"
 
     def test_slot(self):
@@ -224,31 +223,31 @@ class TestConditionExpressions:
         cond = self._first_condition('REMAP {\n    if inbound.req.X-Foo == "bar" {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
         assert cond.left == IdentValue(raw="inbound.req.X-Foo")
-        assert cond.operator == "=="
+        assert cond.operator == CmpOp.EQ
         assert cond.right == LiteralStringValue(raw="bar")
         assert cond.modifiers == ()
 
     def test_regex_comparison(self):
         cond = self._first_condition('REMAP {\n    if inbound.url.path ~ /\\.php$/ {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "~"
+        assert cond.operator == CmpOp.MATCH
         assert isinstance(cond.right, RegexValue)
 
     def test_in_set(self):
         cond = self._first_condition('REMAP {\n    if inbound.url.path in ["a", "b"] {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "in"
+        assert cond.operator == CmpOp.IN
         assert cond.right == (LiteralStringValue(raw="a"), LiteralStringValue(raw="b"))
 
     def test_not_in_set(self):
         cond = self._first_condition('REMAP {\n    if inbound.url.path !in ["a"] {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "!in"
+        assert cond.operator == CmpOp.NOT_IN
 
     def test_in_iprange(self):
         cond = self._first_condition('REMAP {\n    if inbound.ip in {10.0.0.0/8} {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "in"
+        assert cond.operator == CmpOp.IN
         assert cond.right == (IPValue(raw="10.0.0.0/8"),)
 
     def test_modifiers(self):
@@ -287,7 +286,7 @@ class TestConditionExpressions:
         cond = self._first_condition(
             'REMAP {\n    if inbound.req.X-A == "a" && inbound.req.X-B == "b" {\n        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "&&"
+        assert cond.operator == BoolOp.AND
         assert isinstance(cond.left, Comparison)
         assert isinstance(cond.right, Comparison)
 
@@ -295,7 +294,7 @@ class TestConditionExpressions:
         cond = self._first_condition(
             'REMAP {\n    if inbound.req.X-A == "a" || inbound.req.X-B == "b" {\n        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "||"
+        assert cond.operator == BoolOp.OR
 
     def test_function_call_in_condition(self):
         cond = self._first_condition('REMAP {\n    if access("/tmp/bar") {\n        set-debug();\n    }\n}')
@@ -306,31 +305,31 @@ class TestConditionExpressions:
     def test_not_tilde_comparison(self):
         cond = self._first_condition('REMAP {\n    if inbound.url.path !~ /\\.jpg$/ {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "!~"
+        assert cond.operator == CmpOp.NOT_MATCH
         assert isinstance(cond.right, RegexValue)
 
     def test_greater_than_comparison(self):
         cond = self._first_condition('REMAP {\n    if inbound.req.Content-Length > 1000 {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == ">"
+        assert cond.operator == CmpOp.GT
         assert cond.right == 1000
 
     def test_less_than_comparison(self):
         cond = self._first_condition('REMAP {\n    if inbound.req.Content-Length < 500 {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "<"
+        assert cond.operator == CmpOp.LT
         assert cond.right == 500
 
     def test_neq_comparison(self):
         cond = self._first_condition('REMAP {\n    if inbound.req.X-Foo != "bar" {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "!="
+        assert cond.operator == CmpOp.NEQ
         assert cond.right == LiteralStringValue(raw="bar")
 
     def test_parenthesized_condition(self):
         cond = self._first_condition('REMAP {\n    if (inbound.req.X-Foo == "bar") {\n        set-debug();\n    }\n}')
         assert isinstance(cond, Comparison)
-        assert cond.operator == "=="
+        assert cond.operator == CmpOp.EQ
         assert cond.right == LiteralStringValue(raw="bar")
 
     def test_and_binds_tighter_than_or(self):
@@ -340,11 +339,11 @@ class TestConditionExpressions:
             '    if inbound.req.X-A == "a" || inbound.req.X-B == "b" && inbound.req.X-C == "c" {\n'
             '        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "||"
+        assert cond.operator == BoolOp.OR
         assert isinstance(cond.left, Comparison)
         assert cond.left.left == IdentValue(raw="inbound.req.X-A")
         assert isinstance(cond.right, LogicalOp)
-        assert cond.right.operator == "&&"
+        assert cond.right.operator == BoolOp.AND
         assert cond.right.left.left == IdentValue(raw="inbound.req.X-B")
         assert cond.right.right.left == IdentValue(raw="inbound.req.X-C")
 
@@ -355,7 +354,7 @@ class TestConditionExpressions:
             '    if !inbound.resp.All-Cache && inbound.req.X-B == "b" {\n'
             '        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "&&"
+        assert cond.operator == BoolOp.AND
         assert isinstance(cond.left, NotOp)
         assert isinstance(cond.left.operand, IdentCondition)
         assert cond.left.operand.name == "inbound.resp.All-Cache"
@@ -369,7 +368,7 @@ class TestConditionExpressions:
             '    if !(inbound.req.X-A == "x") || inbound.req.X-B == "y" {\n'
             '        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "||"
+        assert cond.operator == BoolOp.OR
         assert isinstance(cond.left, NotOp)
         assert isinstance(cond.left.operand, Comparison)
         assert cond.left.operand.left == IdentValue(raw="inbound.req.X-A")
@@ -397,9 +396,9 @@ class TestConditionExpressions:
             '    if (inbound.req.X-A == "a" || inbound.req.X-B == "b") && inbound.req.X-C == "c" {\n'
             '        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "&&"
+        assert cond.operator == BoolOp.AND
         assert isinstance(cond.left, LogicalOp)
-        assert cond.left.operator == "||"
+        assert cond.left.operator == BoolOp.OR
         assert cond.left.left.left == IdentValue(raw="inbound.req.X-A")
         assert cond.left.right.left == IdentValue(raw="inbound.req.X-B")
         assert isinstance(cond.right, Comparison)
@@ -412,10 +411,10 @@ class TestConditionExpressions:
             '    if !(inbound.req.X-A == "x" || inbound.req.X-B == "y") && inbound.req.X-C == "z" {\n'
             '        set-debug();\n    }\n}')
         assert isinstance(cond, LogicalOp)
-        assert cond.operator == "&&"
+        assert cond.operator == BoolOp.AND
         assert isinstance(cond.left, NotOp)
         assert isinstance(cond.left.operand, LogicalOp)
-        assert cond.left.operand.operator == "||"
+        assert cond.left.operand.operator == BoolOp.OR
         assert isinstance(cond.right, Comparison)
         assert cond.right.left == IdentValue(raw="inbound.req.X-C")
 
@@ -671,7 +670,7 @@ REMAP {
         inner = middle.body[1]
         assert isinstance(inner, IfBlock)
         assert isinstance(inner.condition, LogicalOp)
-        assert inner.condition.operator == "||"
+        assert inner.condition.operator == BoolOp.OR
 
         # Outer elif has modifiers
         assert len(outer.elif_branches) == 1
@@ -700,7 +699,7 @@ REMAP {
         ast = _build(src)
         cond = ast.body[0].body[0].condition
         assert isinstance(cond, Comparison)
-        assert cond.operator == "in"
+        assert cond.operator == CmpOp.IN
         assert len(cond.right) == 2
 
     def test_set_membership_with_modifier(self):
@@ -713,7 +712,7 @@ REMAP {
         ast = _build(src)
         cond = ast.body[0].body[0].condition
         assert isinstance(cond, Comparison)
-        assert cond.operator == "in"
+        assert cond.operator == CmpOp.IN
         assert cond.right == (LiteralStringValue(raw="php"), LiteralStringValue(raw="php3"), LiteralStringValue(raw="php4"))
         assert cond.modifiers == ("EXT",)
 

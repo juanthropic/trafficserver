@@ -18,11 +18,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Union
 
-from hrw4u.types import VarScope
-
 __all__ = [
+    "AssignOp",
+    "CmpOp",
+    "BoolOp",
+    "VarSectionKind",
     "LiteralStringValue",
     "IdentValue",
     "IPValue",
@@ -52,6 +55,36 @@ __all__ = [
     "BodyNode",
     "TopLevelNode",
 ]
+
+
+class AssignOp(Enum):
+    ASSIGN = auto()
+    PLUS_ASSIGN = auto()
+    __repr__ = Enum.__str__
+
+
+class CmpOp(Enum):
+    EQ = auto()
+    NEQ = auto()
+    GT = auto()
+    LT = auto()
+    MATCH = auto()
+    NOT_MATCH = auto()
+    IN = auto()
+    NOT_IN = auto()
+    __repr__ = Enum.__str__
+
+
+class BoolOp(Enum):
+    AND = auto()
+    OR = auto()
+    __repr__ = Enum.__str__
+
+
+class VarSectionKind(Enum):
+    TXN = auto()
+    SESSION = auto()
+    __repr__ = Enum.__str__
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -106,7 +139,7 @@ class Target:
 @dataclass(frozen=True, kw_only=True)
 class Assignment(Node):
     target: Target
-    operator: str  # "=" or "+="
+    operator: AssignOp
     value: ValueExpr
 
 
@@ -124,14 +157,14 @@ class Break(Node):
 @dataclass(frozen=True, kw_only=True)
 class Comparison(Node):
     left: IdentValue | FunctionCall
-    operator: str  # "==", "!=", ">", "<", "~", "!~", "in", "!in"
+    operator: CmpOp
     right: ValueExpr | RegexValue | tuple[ValueExpr, ...]
     modifiers: tuple[str, ...]
 
 
 @dataclass(frozen=True, kw_only=True)
 class LogicalOp(Node):
-    operator: str  # "&&" or "||"
+    operator: BoolOp
     left: ConditionExpr
     right: ConditionExpr
 
@@ -186,7 +219,7 @@ class VarDecl(Node):
 
 @dataclass(frozen=True, kw_only=True)
 class VarSection(Node):
-    scope: VarScope
+    scope: VarSectionKind
     declarations: tuple[VarDecl, ...]
 
 
