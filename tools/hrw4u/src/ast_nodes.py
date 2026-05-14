@@ -57,6 +57,10 @@ __all__ = [
 ]
 
 
+# `__repr__ = Enum.__str__` keeps pprint output of ASTs compact
+# (e.g. `AssignOp.ASSIGN` instead of `<AssignOp.ASSIGN: 1>`).
+
+
 class AssignOp(Enum):
     ASSIGN = auto()
     PLUS_ASSIGN = auto()

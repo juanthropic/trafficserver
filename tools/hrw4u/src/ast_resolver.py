@@ -108,7 +108,7 @@ def resolve(
         elif isinstance(node, nodes.VarSection):
             if seen_sections:
                 error_collector.add_error(
-                    Hrw4uSyntaxError(filename, node.line, 0, "Variable section must be first in a section", ""))
+                    Hrw4uSyntaxError(filename, node.line, 0, "Variable sections must appear before any section blocks", ""))
                 continue
             scope = _VAR_SECTION_SCOPE[node.scope]
             for decl in node.declarations:
