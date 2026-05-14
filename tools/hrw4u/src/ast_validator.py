@@ -33,11 +33,7 @@ _PARAM_REF_PATTERN = re.compile(r'\$([a-zA-Z_][a-zA-Z0-9_-]*)')
 _regex_validator = Validator.regex_pattern()
 
 
-def validate(
-        resolved: ResolvedAST,
-        filename: str,
-        error_collector: ErrorCollector,
-        debug: bool = False) -> None:
+def validate(resolved: ResolvedAST, filename: str, error_collector: ErrorCollector, debug: bool = False) -> None:
     ctx = _ValidationContext(
         filename=filename,
         error_collector=error_collector,

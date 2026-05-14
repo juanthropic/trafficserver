@@ -34,14 +34,10 @@ from hrw4u.errors import ErrorCollector
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Parse HRW4U input and print the AST, optionally running the resolver and validator.")
+    parser.add_argument("input_file", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file (default: stdin)")
     parser.add_argument(
-        "input_file", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file (default: stdin)")
-    parser.add_argument(
-        "-r", "--resolve", action="store_true",
-        help="Also run the resolver pass and print the resulting procedure registry")
-    parser.add_argument(
-        "-V", "--validate", action="store_true",
-        help="Also run the validator pass after resolve (implies -r)")
+        "-r", "--resolve", action="store_true", help="Also run the resolver pass and print the resulting procedure registry")
+    parser.add_argument("-V", "--validate", action="store_true", help="Also run the validator pass after resolve (implies -r)")
     parser.add_argument(
         "--procedures-path",
         metavar="DIR[:DIR...]",

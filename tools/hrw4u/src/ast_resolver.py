@@ -101,8 +101,7 @@ def resolve(
         elif isinstance(node, nodes.ProcedureDecl):
             if seen_sections:
                 error_collector.add_error(
-                    Hrw4uSyntaxError(filename, node.line, 0,
-                                     "'procedure' declarations must appear before any section blocks", ""))
+                    Hrw4uSyntaxError(filename, node.line, 0, "'procedure' declarations must appear before any section blocks", ""))
                 continue
             _register_procedure_decl(node, filename, proc_registry, error_collector)
 
@@ -123,18 +122,14 @@ def resolve(
                 valid_sections = [s.value for s in SectionType]
                 error_collector.add_error(
                     Hrw4uSyntaxError(
-                        filename, node.line, 0,
-                        f"Invalid section name: '{node.type}'. Valid sections: {', '.join(valid_sections)}", ""))
+                        filename, node.line, 0, f"Invalid section name: '{node.type}'. Valid sections: {', '.join(valid_sections)}",
+                        ""))
 
     return ResolvedAST(ast=ast, proc_registry=proc_registry, symbol_resolver=symbol_resolver)
 
 
 def _resolve_use_directive(
-        node: nodes.UseDirective,
-        filename: str,
-        search_paths: list[Path],
-        proc_registry: dict[str, ProcSig],
-        proc_loaded: set[str],
+        node: nodes.UseDirective, filename: str, search_paths: list[Path], proc_registry: dict[str, ProcSig], proc_loaded: set[str],
         error_collector: ErrorCollector) -> None:
     if not search_paths:
         error_collector.add_error(
@@ -146,27 +141,21 @@ def _resolve_use_directive(
             Hrw4uSyntaxError(filename, node.line, 0, f"use '{node.spec}': file not found in procedures path", ""))
         return
     try:
-        _load_and_resolve_proc_file(
-            path, [], search_paths, proc_registry, proc_loaded, error_collector, use_spec=node.spec)
+        _load_and_resolve_proc_file(path, [], search_paths, proc_registry, proc_loaded, error_collector, use_spec=node.spec)
     except Exception as e:
         error_collector.add_error(Hrw4uSyntaxError(filename, node.line, 0, str(e), ""))
 
 
 def _register_procedure_decl(
-        node: nodes.ProcedureDecl,
-        filename: str,
-        proc_registry: dict[str, ProcSig],
-        error_collector: ErrorCollector) -> None:
+        node: nodes.ProcedureDecl, filename: str, proc_registry: dict[str, ProcSig], error_collector: ErrorCollector) -> None:
     if '::' not in node.name:
         error_collector.add_error(
-            Hrw4uSyntaxError(filename, node.line, 0,
-                             f"procedure name '{node.name}' must be qualified (e.g. 'ns::name')", ""))
+            Hrw4uSyntaxError(filename, node.line, 0, f"procedure name '{node.name}' must be qualified (e.g. 'ns::name')", ""))
         return
     if node.name in proc_registry:
         existing = proc_registry[node.name]
         error_collector.add_error(
-            Hrw4uSyntaxError(filename, node.line, 0,
-                             f"procedure '{node.name}' already declared in {existing.source_file}", ""))
+            Hrw4uSyntaxError(filename, node.line, 0, f"procedure '{node.name}' already declared in {existing.source_file}", ""))
         return
 
     seen_default = False
@@ -180,23 +169,15 @@ def _register_procedure_decl(
         if p.default is not None:
             seen_default = True
 
-    proc_registry[node.name] = ProcSig(
-        qualified_name=node.name,
-        params=node.params,
-        body=node.body,
-        source_file=filename)
+    proc_registry[node.name] = ProcSig(qualified_name=node.name, params=node.params, body=node.body, source_file=filename)
 
 
 def _register_var_decl(
-        decl: nodes.VarDecl,
-        scope: types.VarScope,
-        filename: str,
-        symbol_resolver: SymbolResolver,
+        decl: nodes.VarDecl, scope: types.VarScope, filename: str, symbol_resolver: SymbolResolver,
         error_collector: ErrorCollector) -> None:
     if '.' in decl.name or ':' in decl.name:
         error_collector.add_error(
-            Hrw4uSyntaxError(filename, decl.line, 0,
-                             f"Variable name '{decl.name}' cannot contain '.' or ':' characters", ""))
+            Hrw4uSyntaxError(filename, decl.line, 0, f"Variable name '{decl.name}' cannot contain '.' or ':' characters", ""))
         return
     try:
         symbol_resolver.declare_variable(decl.name, decl.type_name, decl.slot, scope)
@@ -265,8 +246,7 @@ def _load_and_resolve_proc_file(
             sub_path = resolve_use_path(item.spec, search_paths)
             if sub_path is None:
                 error_collector.add_error(
-                    Hrw4uSyntaxError(
-                        str(path), item.line, 0, f"use '{item.spec}': file not found in procedures path", ""))
+                    Hrw4uSyntaxError(str(path), item.line, 0, f"use '{item.spec}': file not found in procedures path", ""))
                 continue
             _load_and_resolve_proc_file(
                 sub_path, new_stack, search_paths, proc_registry, proc_loaded, error_collector, use_spec=item.spec)
@@ -276,31 +256,23 @@ def _load_and_resolve_proc_file(
             name = item.name
             if '::' not in name:
                 error_collector.add_error(
-                    Hrw4uSyntaxError(
-                        str(path), item.line, 0, f"procedure name '{name}' must be qualified (e.g. 'ns::name')", ""))
+                    Hrw4uSyntaxError(str(path), item.line, 0, f"procedure name '{name}' must be qualified (e.g. 'ns::name')", ""))
                 continue
             if expected_ns and not name.startswith(expected_ns):
                 error_collector.add_error(
                     Hrw4uSyntaxError(
                         str(path), item.line, 0,
-                        f"procedure '{name}' does not match namespace '{expected_ns[:-2]}' (expected from 'use {use_spec}')",
-                        ""))
+                        f"procedure '{name}' does not match namespace '{expected_ns[:-2]}' (expected from 'use {use_spec}')", ""))
                 continue
             if name in proc_registry:
                 existing = proc_registry[name]
                 error_collector.add_error(
-                    Hrw4uSyntaxError(
-                        str(path), item.line, 0, f"procedure '{name}' already declared in {existing.source_file}", ""))
+                    Hrw4uSyntaxError(str(path), item.line, 0, f"procedure '{name}' already declared in {existing.source_file}", ""))
                 continue
 
-            proc_registry[name] = ProcSig(
-                qualified_name=name,
-                params=item.params,
-                body=item.body,
-                source_file=str(path))
+            proc_registry[name] = ProcSig(qualified_name=name, params=item.params, body=item.body, source_file=str(path))
 
     if not saw_proc_content:
-        error_collector.add_error(
-            Hrw4uSyntaxError(str(path), 1, 0, f"no 'procedure' declarations found in {path.name}", ""))
+        error_collector.add_error(Hrw4uSyntaxError(str(path), 1, 0, f"no 'procedure' declarations found in {path.name}", ""))
 
     proc_loaded.add(abs_path)
