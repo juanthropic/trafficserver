@@ -27,17 +27,21 @@ from pprint import pprint
 
 from hrw4u.ast_visitor import parse_to_ast
 from hrw4u.ast_resolver import resolve
+from hrw4u.ast_validator import validate
 from hrw4u.errors import ErrorCollector
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Parse HRW4U input and print the AST, optionally running the resolver.")
+        description="Parse HRW4U input and print the AST, optionally running the resolver and validator.")
     parser.add_argument(
         "input_file", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file (default: stdin)")
     parser.add_argument(
         "-r", "--resolve", action="store_true",
         help="Also run the resolver pass and print the resulting procedure registry")
+    parser.add_argument(
+        "-V", "--validate", action="store_true",
+        help="Also run the validator pass after resolve (implies -r)")
     parser.add_argument(
         "--procedures-path",
         metavar="DIR[:DIR...]",
@@ -58,11 +62,13 @@ def main() -> None:
         print(error_collector.get_error_summary(), file=sys.stderr)
         sys.exit(1)
 
-    if args.resolve:
+    run_resolve = args.resolve or args.validate
+
+    if run_resolve:
         print("=== AST ===")
     pprint(ast, width=120)
 
-    if args.resolve:
+    if run_resolve:
         search_paths: list[Path] | None = None
         if args.procedures_path:
             search_paths = [Path(p) for p in args.procedures_path.split(os.pathsep) if p]
@@ -75,6 +81,9 @@ def main() -> None:
             pprint(resolved.proc_registry, width=120)
         else:
             print("(empty)")
+
+        if args.validate:
+            validate(resolved, filename, error_collector)
 
         if error_collector.has_errors():
             print(error_collector.get_error_summary(), file=sys.stderr)
