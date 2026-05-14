@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from hrw4u.errors import Hrw4uSyntaxError, ErrorCollector
+from hrw4u.errors import Hrw4uSyntaxError, ErrorCollector, SymbolResolutionError
 from hrw4u.symbols import SymbolResolver
 from hrw4u.states import SectionType
 from hrw4u.procedures import resolve_use_path
@@ -181,10 +181,11 @@ def _register_var_decl(
         return
     try:
         symbol_resolver.declare_variable(decl.name, decl.type_name, decl.slot, scope)
-    except Hrw4uSyntaxError as e:
-        error_collector.add_error(e)
-    except Exception as e:
-        error_collector.add_error(Hrw4uSyntaxError(filename, decl.line, 0, str(e), ""))
+    except SymbolResolutionError as e:
+        err = Hrw4uSyntaxError(filename, decl.line, 0, str(e), "")
+        for note in getattr(e, "__notes__", None) or ():
+            err.add_note(note)
+        error_collector.add_error(err)
 
 
 def _load_and_resolve_proc_file(
