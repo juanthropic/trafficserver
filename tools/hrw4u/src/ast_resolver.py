@@ -142,8 +142,8 @@ def _resolve_use_directive(
         return
     try:
         _load_and_resolve_proc_file(path, [], search_paths, proc_registry, proc_loaded, error_collector, use_spec=node.spec)
-    except Exception as e:
-        error_collector.add_error(Hrw4uSyntaxError(filename, node.line, 0, str(e), ""))
+    except (OSError, UnicodeDecodeError) as e:
+        error_collector.add_error(Hrw4uSyntaxError(filename, node.line, 0, f"failed to read '{path}': {e}", ""))
 
 
 def _register_procedure_decl(
