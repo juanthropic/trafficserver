@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Mapping
 
 from hrw4u.errors import Hrw4uSyntaxError, ErrorCollector, SymbolResolutionError
 from hrw4u.symbols import SymbolResolver
@@ -48,7 +49,7 @@ class _ValidationContext:
     filename: str
     error_collector: ErrorCollector
     symbol_resolver: SymbolResolver
-    proc_registry: dict[str, ProcSig]
+    proc_registry: Mapping[str, ProcSig]
     debug: bool
     proc_call_stack: list[str] = field(default_factory=list)
     proc_bindings: dict[str, str] = field(default_factory=dict)

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 from hrw4u.errors import Hrw4uSyntaxError, ErrorCollector, SymbolResolutionError
 from hrw4u.symbols import SymbolResolver
@@ -54,15 +56,16 @@ class ProcSig:
 class ResolvedAST:
     """Output of the resolution pass: the original AST plus its resolved state.
 
-    `frozen=True` prevents field reassignment, but `proc_registry` and
-    `symbol_resolver` are mutable objects. Callers must not mutate them.
+    `proc_registry` is returned as a read-only `MappingProxyType` view so
+    downstream passes (e.g. the validator) cannot extend or overwrite it.
+    `symbol_resolver` is a live mutable object; callers must not mutate it.
 
     Always returned by `resolve()` even when errors were collected; check
     `error_collector.has_errors()` before passing this to `validate()`.
     """
 
     ast: nodes.HRW4UAST
-    proc_registry: dict[str, ProcSig]
+    proc_registry: Mapping[str, ProcSig]
     symbol_resolver: SymbolResolver
 
 
@@ -125,7 +128,7 @@ def resolve(
                         filename, node.line, 0, f"Invalid section name: '{node.type}'. Valid sections: {', '.join(valid_sections)}",
                         ""))
 
-    return ResolvedAST(ast=ast, proc_registry=proc_registry, symbol_resolver=symbol_resolver)
+    return ResolvedAST(ast=ast, proc_registry=MappingProxyType(proc_registry), symbol_resolver=symbol_resolver)
 
 
 def _resolve_use_directive(
