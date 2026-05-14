@@ -23,13 +23,8 @@ import argparse
 import sys
 from pprint import pprint
 
-from antlr4 import InputStream, CommonTokenStream
-from antlr4.error.ErrorStrategy import BailErrorStrategy
-
-from hrw4u.hrw4uLexer import hrw4uLexer
-from hrw4u.hrw4uParser import hrw4uParser
-from hrw4u.errors import ThrowingErrorListener
-from hrw4u.ast_visitor import ASTVisitor
+from hrw4u.ast_visitor import parse_to_ast
+from hrw4u.errors import ErrorCollector
 
 
 def main() -> None:
@@ -42,19 +37,13 @@ def main() -> None:
     if args.input_file is not sys.stdin:
         args.input_file.close()
 
-    listener = ThrowingErrorListener(filename=filename)
-    lexer = hrw4uLexer(InputStream(content))
-    lexer.removeErrorListeners()
-    lexer.addErrorListener(listener)
+    error_collector = ErrorCollector()
+    ast = parse_to_ast(content, filename, error_collector)
 
-    stream = CommonTokenStream(lexer)
-    parser_obj = hrw4uParser(stream)
-    parser_obj.removeErrorListeners()
-    parser_obj.addErrorListener(listener)
-    parser_obj.errorHandler = BailErrorStrategy()
+    if error_collector.has_errors():
+        print(error_collector.get_error_summary(), file=sys.stderr)
+        sys.exit(1)
 
-    tree = parser_obj.program()
-    ast = ASTVisitor().visitProgram(tree)
     pprint(ast, width=120)
 
 

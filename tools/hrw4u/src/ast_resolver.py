@@ -20,16 +20,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from antlr4 import InputStream, CommonTokenStream
-from antlr4.error.ErrorStrategy import BailErrorStrategy
-
-from hrw4u.hrw4uLexer import hrw4uLexer
-from hrw4u.hrw4uParser import hrw4uParser
-from hrw4u.errors import Hrw4uSyntaxError, ThrowingErrorListener, ErrorCollector
+from hrw4u.errors import Hrw4uSyntaxError, ErrorCollector
 from hrw4u.symbols import SymbolResolver
 from hrw4u.states import SectionType
 from hrw4u.procedures import resolve_use_path
-from hrw4u.ast_visitor import ASTVisitor
+from hrw4u.ast_visitor import parse_to_ast
 import hrw4u.types as types
 import hrw4u.ast_nodes as nodes
 
@@ -151,9 +146,8 @@ def _resolve_use_directive(
             Hrw4uSyntaxError(filename, node.line, 0, f"use '{node.spec}': file not found in procedures path", ""))
         return
     try:
-        _load_and_resolve_proc_file(path, [], search_paths, proc_registry, proc_loaded, use_spec=node.spec)
-    except Hrw4uSyntaxError as e:
-        error_collector.add_error(e)
+        _load_and_resolve_proc_file(
+            path, [], search_paths, proc_registry, proc_loaded, error_collector, use_spec=node.spec)
     except Exception as e:
         error_collector.add_error(Hrw4uSyntaxError(filename, node.line, 0, str(e), ""))
 
@@ -218,68 +212,95 @@ def _load_and_resolve_proc_file(
         search_paths: list[Path],
         proc_registry: dict[str, ProcSig],
         proc_loaded: set[str],
+        error_collector: ErrorCollector,
         use_spec: str | None = None) -> None:
+    """Parse an external .hrw4u file and register its procedures.
+
+    Structural errors (unqualified names, namespace mismatches, duplicate
+    procs, missing nested `use` targets, files with no proc content) are
+    appended to `error_collector` and the loop continues, so one bad
+    procedure does not hide the next. Lex/parse errors from the file are
+    also collected via `parse_to_ast`; when parsing fails, the file is
+    marked loaded and no procedures from it are registered, since a
+    partially-recovered tree would not faithfully represent the source.
+
+    `load_stack` holds the absolute paths currently being loaded on the
+    recursion chain; it is used only for cycle detection. `proc_loaded`
+    is the set of paths already fully processed and is consulted to skip
+    diamond re-loads. A detected cycle records an error and returns
+    without recursing to avoid infinite loops; the file is still marked
+    loaded at the end so retries do not re-emit the same errors.
+
+    `use_spec` is the spec string from the `use` directive that triggered
+    this load (or None at the top level). If it contains `::`, every
+    procedure in the file must live under that namespace; otherwise the
+    namespace check is skipped.
+
+    Mutates `proc_registry`, `proc_loaded`, and `error_collector` in place.
+    """
     abs_path = str(path.resolve())
     if abs_path in proc_loaded:
         return
     if abs_path in load_stack:
         cycle = ' -> '.join([*load_stack, abs_path])
-        raise Hrw4uSyntaxError(str(path), 1, 0, f"circular use dependency: {cycle}", "")
+        error_collector.add_error(Hrw4uSyntaxError(str(path), 1, 0, f"circular use dependency: {cycle}", ""))
+        return
 
     expected_ns: str | None = None
     if use_spec and '::' in use_spec:
         expected_ns = use_spec[:use_spec.rindex('::') + 2]
 
     text = path.read_text(encoding='utf-8')
-    listener = ThrowingErrorListener(filename=str(path))
-
-    lexer = hrw4uLexer(InputStream(text))
-    lexer.removeErrorListeners()
-    lexer.addErrorListener(listener)
-
-    stream = CommonTokenStream(lexer)
-    parser = hrw4uParser(stream)
-    parser.removeErrorListeners()
-    parser.addErrorListener(listener)
-    parser.errorHandler = BailErrorStrategy()
-    tree = parser.program()
-
-    file_ast: nodes.HRW4UAST = ASTVisitor().visit(tree)
+    file_ast = parse_to_ast(text, str(path), error_collector)
+    if file_ast is None:
+        proc_loaded.add(abs_path)
+        return
 
     new_stack = [*load_stack, abs_path]
-    found_proc = False
+    saw_proc_content = False
 
     for item in file_ast.body:
         if isinstance(item, nodes.UseDirective):
+            saw_proc_content = True
             sub_path = resolve_use_path(item.spec, search_paths)
             if sub_path is None:
-                raise Hrw4uSyntaxError(
-                    str(path), item.line, 0, f"use '{item.spec}': file not found in procedures path", "")
-            _load_and_resolve_proc_file(sub_path, new_stack, search_paths, proc_registry, proc_loaded, use_spec=item.spec)
-            found_proc = True
+                error_collector.add_error(
+                    Hrw4uSyntaxError(
+                        str(path), item.line, 0, f"use '{item.spec}': file not found in procedures path", ""))
+                continue
+            _load_and_resolve_proc_file(
+                sub_path, new_stack, search_paths, proc_registry, proc_loaded, error_collector, use_spec=item.spec)
 
         elif isinstance(item, nodes.ProcedureDecl):
+            saw_proc_content = True
             name = item.name
             if '::' not in name:
-                raise Hrw4uSyntaxError(
-                    str(path), item.line, 0, f"procedure name '{name}' must be qualified (e.g. 'ns::name')", "")
+                error_collector.add_error(
+                    Hrw4uSyntaxError(
+                        str(path), item.line, 0, f"procedure name '{name}' must be qualified (e.g. 'ns::name')", ""))
+                continue
             if expected_ns and not name.startswith(expected_ns):
-                raise Hrw4uSyntaxError(
-                    str(path), item.line, 0,
-                    f"procedure '{name}' does not match namespace '{expected_ns[:-2]}' (expected from 'use {use_spec}')", "")
+                error_collector.add_error(
+                    Hrw4uSyntaxError(
+                        str(path), item.line, 0,
+                        f"procedure '{name}' does not match namespace '{expected_ns[:-2]}' (expected from 'use {use_spec}')",
+                        ""))
+                continue
             if name in proc_registry:
                 existing = proc_registry[name]
-                raise Hrw4uSyntaxError(
-                    str(path), item.line, 0, f"procedure '{name}' already declared in {existing.source_file}", "")
+                error_collector.add_error(
+                    Hrw4uSyntaxError(
+                        str(path), item.line, 0, f"procedure '{name}' already declared in {existing.source_file}", ""))
+                continue
 
             proc_registry[name] = ProcSig(
                 qualified_name=name,
                 params=item.params,
                 body=item.body,
                 source_file=str(path))
-            found_proc = True
 
-    if not found_proc:
-        raise Hrw4uSyntaxError(str(path), 1, 0, f"no 'procedure' declarations found in {path.name}", "")
+    if not saw_proc_content:
+        error_collector.add_error(
+            Hrw4uSyntaxError(str(path), 1, 0, f"no 'procedure' declarations found in {path.name}", ""))
 
     proc_loaded.add(abs_path)

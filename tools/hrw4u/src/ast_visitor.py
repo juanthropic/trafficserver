@@ -18,6 +18,10 @@
 from __future__ import annotations
 
 from hrw4u.hrw4uVisitor import hrw4uVisitor
+from hrw4u.hrw4uLexer import hrw4uLexer
+from hrw4u.hrw4uParser import hrw4uParser
+from hrw4u.common import create_parse_tree
+from hrw4u.errors import ErrorCollector
 from hrw4u.ast_nodes import *
 
 
@@ -247,3 +251,39 @@ class ASTVisitor(hrw4uVisitor):
         if ctx.modifier():
             return tuple(tok.text for tok in ctx.modifier().modifierList().mods)
         return ()
+
+
+def parse_to_ast(text: str, filename: str, error_collector: ErrorCollector) -> HRW4UAST | None:
+    """Lex, parse, and visit `text` to produce an `HRW4UAST`.
+
+    `text` is the HRW4U source to parse. `filename` is used only as a
+    diagnostic label stamped onto each collected `Hrw4uSyntaxError`
+    (appearing in the `path:line:col: error: ...` header); it is never
+    opened or otherwise resolved, so callers reading from stdin or an
+    in-memory string may pass a sentinel like `<stdin>` or `<test>`.
+
+    Any lex or parse errors are appended to `error_collector` rather than
+    raised, so a single file with multiple syntax errors surfaces all of
+    them at once. When any parse errors are recorded, returns `None`
+    instead of an AST: a tree patched up by ANTLR's default error
+    recovery is structurally walkable but semantically a lie (phantom
+    tokens inserted, real tokens skipped), and feeding that into the
+    resolver or validator would produce a cascade of follow-on errors
+    against fabricated structure. The invariant is that every returned
+    `HRW4UAST` reflects real input.
+    """
+    tree, _, parse_errors = create_parse_tree(
+        content=text,
+        filename=filename,
+        lexer_class=hrw4uLexer,
+        parser_class=hrw4uParser,
+        error_prefix="Parse",
+        collect_errors=True,
+    )
+    if parse_errors is not None and parse_errors.has_errors():
+        for err in parse_errors.errors:
+            error_collector.add_error(err)
+        return None
+    if tree is None:
+        return None
+    return ASTVisitor().visit(tree)
