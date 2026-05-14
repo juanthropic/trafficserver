@@ -15,21 +15,35 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-"""hrw4u-ast: Parse HRW4U input and print the AST."""
+"""hrw4u-ast: Parse HRW4U input and print the AST, optionally resolving procedures."""
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
 from pprint import pprint
 
 from hrw4u.ast_visitor import parse_to_ast
+from hrw4u.ast_resolver import resolve
 from hrw4u.errors import ErrorCollector
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Parse HRW4U input and print the AST.")
-    parser.add_argument("input_file", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file (default: stdin)")
+    parser = argparse.ArgumentParser(
+        description="Parse HRW4U input and print the AST, optionally running the resolver.")
+    parser.add_argument(
+        "input_file", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file (default: stdin)")
+    parser.add_argument(
+        "-r", "--resolve", action="store_true",
+        help="Also run the resolver pass and print the resulting procedure registry")
+    parser.add_argument(
+        "--procedures-path",
+        metavar="DIR[:DIR...]",
+        dest="procedures_path",
+        default="",
+        help="Colon-separated list of directories to search for procedure files")
     args = parser.parse_args()
 
     content = args.input_file.read()
@@ -44,7 +58,27 @@ def main() -> None:
         print(error_collector.get_error_summary(), file=sys.stderr)
         sys.exit(1)
 
+    if args.resolve:
+        print("=== AST ===")
     pprint(ast, width=120)
+
+    if args.resolve:
+        search_paths: list[Path] | None = None
+        if args.procedures_path:
+            search_paths = [Path(p) for p in args.procedures_path.split(os.pathsep) if p]
+
+        resolved = resolve(ast, filename, error_collector, proc_search_paths=search_paths)
+
+        print()
+        print("=== Procedure Registry ===")
+        if resolved.proc_registry:
+            pprint(resolved.proc_registry, width=120)
+        else:
+            print("(empty)")
+
+        if error_collector.has_errors():
+            print(error_collector.get_error_summary(), file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
