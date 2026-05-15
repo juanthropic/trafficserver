@@ -321,21 +321,32 @@ values. The full mapping is in `plugins/header_rewrite/parser.cc:269-309`:
 
 | `cond %{...}` name              | Real hook                         | Available in   |
 |---------------------------------|-----------------------------------|----------------|
-| `READ_REQUEST_HDR_HOOK`         | `TS_HTTP_READ_REQUEST_HDR_HOOK`   | global only    |
-| `READ_REQUEST_PRE_REMAP_HOOK`   | `TS_HTTP_PRE_REMAP_HOOK`          | global only    |
+| `READ_REQUEST_HDR_HOOK`         | `TS_HTTP_READ_REQUEST_HDR_HOOK`   | global only (parser rejects in remap) |
+| `READ_REQUEST_PRE_REMAP_HOOK`   | `TS_HTTP_PRE_REMAP_HOOK`          | global only (parser rejects in remap) |
+| `TXN_START_HOOK`                | `TS_HTTP_TXN_START_HOOK`          | global only in practice (see note below) |
 | `REMAP_PSEUDO_HOOK`             | (synthetic — runs in TSRemapDoRemap) | remap only |
 | `SEND_REQUEST_HDR_HOOK`         | `TS_HTTP_SEND_REQUEST_HDR_HOOK`   | both           |
 | `READ_RESPONSE_HDR_HOOK`        | `TS_HTTP_READ_RESPONSE_HDR_HOOK`  | both (default global) |
 | `SEND_RESPONSE_HDR_HOOK`        | `TS_HTTP_SEND_RESPONSE_HDR_HOOK`  | both           |
-| `TXN_START_HOOK`                | `TS_HTTP_TXN_START_HOOK`          | both           |
 | `TXN_CLOSE_HOOK`                | `TS_HTTP_TXN_CLOSE_HOOK`          | both           |
 
-Two things worth understanding:
+Three things worth understanding:
 
 - **Why no `READ_REQUEST_HDR_HOOK` in remap mode**: by the time
   `TSRemapDoRemap()` is called, that hook has already fired in the timeline.
-  A remap-mode plugin can't "subscribe" retroactively. (See the user's notes
-  in `hooks-plugins-ats.md` — this is exactly the gap discussed there.)
+  A remap-mode plugin can't "subscribe" retroactively. The parser explicitly
+  rejects this with a `TSError` at config-load time
+  (`header_rewrite.cc:308-312`). The same rejection applies to
+  `READ_REQUEST_PRE_REMAP_HOOK`.
+- **`TXN_START_HOOK` is a silent footgun in remap mode.** Unlike the two
+  above, the parser does *not* reject it. `TSRemapDoRemap()` will dutifully
+  call `TSHttpTxnHookAdd()` for the hook (`header_rewrite.cc:781`), but
+  TXN_START has already fired earlier in the timeline, so the registration
+  is too late to ever execute. A `cond %{TXN_START_HOOK}` rule in a remap
+  config is silently dead code. The reason the plugin still references
+  TXN_START at all is that the *global* mode unconditionally registers it
+  at `TSPluginInit` time (line 642) for internal `setPluginControlValues`
+  bookkeeping, not because remap rules can use it.
 - **`REMAP_PSEUDO_HOOK` is a fiction maintained by header_rewrite.** It is
   not a real ATS hook ID — it's a synthetic label that says "execute these
   rules during the remap step itself, synchronously inside
@@ -659,7 +670,160 @@ ATS would have left the remap step.
 
 ---
 
-## 11. Where to look in source for more
+## 11. End-to-end hook trace through `header_rewrite`
+
+The previous section showed the timeline at a high level. This one zooms in
+on a single request that exercises **both** modes of `header_rewrite`
+simultaneously, plus state shared across hooks. The point is to make
+explicit *which* HRW callback fires at each hook, *why* it's registered
+there, and *how* global and remap registrations coexist on the same hook
+list.
+
+### Setup
+
+```
+# plugin.config
+header_rewrite.so /etc/trafficserver/global.conf
+```
+
+```
+# global.conf — runs in global mode; default hook is READ_RESPONSE_HDR
+cond %{SEND_RESPONSE_HDR_HOOK}
+  set-header X-Served-By "ats"
+```
+
+```
+# remap.config
+map http://www.example.com/api/ http://origin.internal/api/ \
+    @plugin=header_rewrite.so @pparam=/etc/trafficserver/api.conf
+```
+
+```
+# api.conf — runs in remap mode
+cond %{REMAP_PSEUDO_HOOK}
+cond %{CLIENT-HEADER:X-Premium} =1
+  set-state-flag 0 1
+
+cond %{READ_RESPONSE_HDR_HOOK}
+cond %{STATUS} >499
+  set-status 502
+
+cond %{SEND_RESPONSE_HDR_HOOK}
+cond %{STATE-FLAG:0} =1
+  set-header X-Tier "premium"
+```
+
+### Startup (once, before any request)
+
+- `plugin_init()` reads `plugin.config`, `dlopen`s `header_rewrite.so`,
+  calls `TSPluginInit()` (`header_rewrite.cc:559`).
+- `TSPluginInit` parses `global.conf` and calls:
+  - `TSHttpHookAdd(TS_HTTP_TXN_START_HOOK, contp)` — unconditional, for
+    `setPluginControlValues` bookkeeping (`header_rewrite.cc:642`).
+  - `TSHttpHookAdd(TS_HTTP_SEND_RESPONSE_HDR_HOOK, contp)` — because the
+    user rule references that hook (line 644 loop).
+- `RemapConfig` parses `remap.config`. For the matching `map` line ATS
+  calls `TSRemapInit()` (once, line 660) and `TSRemapNewInstance()` (line
+  669) which parses `api.conf` and stashes a `RulesConfig*` as the per-rule
+  instance handle.
+
+State at the end of startup: two callbacks on the **global** hook lists
+(TXN_START, SEND_RESPONSE_HDR). The remap-mode rules are not on any hook
+yet — they get wired up per-transaction when a matching request arrives.
+
+### Request: `GET http://www.example.com/api/foo` with `X-Premium: 1`
+
+**1. TCP accept → `Http1ClientSession` → `HttpSM` created.** No HRW
+involvement.
+
+**2. `TS_HTTP_TXN_START_HOOK` fires.** `HttpSM::do_api_callout_internal()`
+walks the global TXN_START list. HRW's `cont_rewrite_headers` runs and
+calls `setPluginControlValues` to seed per-txn plugin-control state. No
+user rules execute (none reference TXN_START).
+
+**3. `TS_HTTP_READ_REQUEST_HDR_HOOK` fires.** No HRW callback registered
+→ no-op.
+
+**4. `TS_HTTP_PRE_REMAP_HOOK` fires.** No-op.
+
+**5. Remap step.** `RemapProcessor::perform_remap()` matches the rule and
+invokes `TSRemapDoRemap()` (`header_rewrite.cc:766`). Two things happen
+inside:
+
+  a. HRW iterates `for i = READ_REQUEST_HDR_HOOK .. LAST_HOOK` (line 781).
+     For every hook the parsed rules reference, it calls
+     `TSHttpTxnHookAdd(rh, i, continuation)`. For this config it
+     registers:
+     - `TS_HTTP_READ_RESPONSE_HDR_HOOK` (txn-scoped)
+     - `TS_HTTP_SEND_RESPONSE_HDR_HOOK` (txn-scoped) — note this is in
+       *addition* to the global SEND_RESPONSE_HDR registration; both fire.
+
+  b. HRW runs the `REMAP_PSEUDO_HOOK` block synchronously (lines
+     791-813). The condition `%{CLIENT-HEADER:X-Premium} =1` matches, so
+     `set-state-flag 0 1` executes, recording state on the transaction.
+
+HRW returns `TSREMAP_NO_REMAP` (URL didn't change) but the rule line still
+routes the URL via the `map` target, so the request is now headed to
+`origin.internal/api/foo`.
+
+**6. `TS_HTTP_POST_REMAP_HOOK` fires.** No-op.
+
+**7. Cache lookup.** Miss. `TS_HTTP_CACHE_LOOKUP_COMPLETE_HOOK` fires.
+No-op.
+
+**8. DNS / `TS_HTTP_OS_DNS_HOOK`.** No-op. `TS_HTTP_SEND_REQUEST_HDR_HOOK`
+fires. No-op. ATS sends to origin.
+
+**9. Origin responds (say 200). `TS_HTTP_READ_RESPONSE_HDR_HOOK` fires.**
+`HttpSM` walks the txn-scoped hook list (set up in step 5). HRW's
+continuation runs and evaluates the rule for this hook: `cond %{STATUS}
+>499` is false (200 ≤ 499), so `set-status 502` does *not* execute. The
+global hook list is also walked, but global has no rule for this hook, so
+no-op there.
+
+**10. `TS_HTTP_SEND_RESPONSE_HDR_HOOK` fires.** Two HRW registrations fire
+here:
+
+  - **Txn-scoped (from `api.conf`)**: condition `%{STATE-FLAG:0} =1`
+    matches (set in step 5), so `set-header X-Tier "premium"` runs.
+  - **Global (from `global.conf`)**: rule unconditionally executes
+    `set-header X-Served-By "ats"`.
+
+ATS writes the response: `200 OK`, `X-Served-By: ats`, `X-Tier:
+premium`, body from origin.
+
+**11. `TS_HTTP_TXN_CLOSE_HOOK` fires.** No HRW user rules for this hook.
+The txn-scoped hook list is destroyed with the transaction; flag state is
+gone.
+
+**12. `TS_HTTP_SSN_CLOSE_HOOK`** when the connection closes. No-op.
+
+### Key observations about hook flow
+
+- **Global rules attach to global hook lists at process startup.** They
+  fire for every transaction, regardless of remap.
+- **Remap-mode rules attach to txn-scoped hook lists at remap time**
+  (step 5). They only fire for transactions that hit this `map` line, and
+  they vanish when the transaction closes — so reloading `remap.config`
+  doesn't pile up duplicates.
+- **`REMAP_PSEUDO_HOOK` runs inline** inside step 5; no `TSHttpTxnHookAdd`
+  involved. That's why it's the only "early" hook a remap-mode rule can
+  fire on: it bypasses the timeline-vs-registration ordering problem.
+- **At a single hook point you can have both global and remap callbacks
+  firing**, in registration order (global registered first at startup,
+  remap added later by `TSRemapDoRemap`). Step 10 is the canonical
+  example.
+- **`STATE-FLAG`/`STATE-INT8` are the bridge across hooks** for a single
+  transaction. The flag set during REMAP_PSEUDO_HOOK survives until
+  SEND_RESPONSE_HDR because both run on the same `TSHttpTxn`.
+- **A request can short-circuit** if a `REMAP_PSEUDO_HOOK` rule calls
+  `set-status` + `set-body` (§9.2): steps 8-9 are skipped because there's
+  no origin to fetch, but step 10 still fires and your global
+  `X-Served-By` header still gets stamped on.
+
+---
+
+## 12. Where to look in source for more
 
 - `src/proxy/http/HttpSM.cc` — state machine and where every hook fires.
   Read `do_api_callout_internal()` and the `state_*` handlers.
