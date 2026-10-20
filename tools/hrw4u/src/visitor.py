@@ -107,6 +107,10 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         self._cachekey_used = False
         self._cachekey_stmts: list[cachekey.CacheKeyStatement] = []
         self._cachekey_headers: list[str] = []
+        self._cachekey_in_file = False
+        # Checked once the whole file is read: either one makes the run-plugin unsafe.
+        self._remap_breaks: list[tuple[str, Any]] = []
+        self._raw_cachekey_calls: list[tuple[str, Any]] = []
 
     def _sandbox_check(self, ctx, check_fn) -> bool:
         """Run a sandbox check, trapping any denial error into the error collector.
@@ -764,6 +768,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                 elif item.commentLine() and self.preserve_comments:
                     comment_text = item.commentLine().COMMENT().getText()
                     self.output.append(comment_text)
+            self._check_cachekey_file()
             self._flush_condition()
             return self.get_final_output()
 
@@ -814,6 +819,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         cachekey.check_conflicts([*self._cachekey_stmts, stmt])
         self._cachekey_stmts.append(stmt)
         self._cachekey_used = True
+        self._cachekey_in_file = True
 
     def _cachekey_arg(self, val_ctx) -> str:
         """Return the raw, quoted argument text, with procedure parameters bound."""
@@ -847,6 +853,25 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             "cache.key +=", lambda: cachekey.CacheKeyStatement("cache.key.add_headers", (header,)), conditional_ok=True)
         self._cachekey_headers.append(header)
         self.emit_statement(self.symbol_resolver.resolve_assignment(f"inbound.req.{header}", rhs, self.current_section))
+
+    def _check_cachekey_file(self) -> None:
+        if not self._cachekey_in_file:
+            return
+        checks = (
+            (self._remap_breaks, "break", "break can't be used in REMAP with cache.*: it would skip the cachekey.so rule"),
+            (
+                self._raw_cachekey_calls, "run-plugin",
+                'run-plugin("cachekey.so", ...) can\'t be used with cache.*: a second cachekey.so call fails at runtime'),
+        )
+        saved = self.filename
+        try:
+            for found, name, message in checks:
+                for filename, ctx in found:
+                    self.filename = filename
+                    with self.trap(ctx):
+                        raise SymbolResolutionError(name, message)
+        finally:
+            self.filename = saved
 
     def _prepare_section(self, ctx):
         """Extract section info and validate. Returns hook name."""
@@ -974,6 +999,8 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                     warning = self._sandbox.check_language("break")
                     if warning:
                         self._add_sandbox_warning(ctx, warning)
+                    if self.current_section == SectionType.REMAP:
+                        self._remap_breaks.append((self.filename, ctx))
                     self._dbg("BREAK")
                     self.emit_statement("no-op [L]")
                     return
@@ -993,6 +1020,8 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                         raw = [self._cachekey_arg(v) for v in call_args.value()] if call_args else []
                         self._collect_cachekey(f"{func}()", lambda: cachekey.parse_statement(func, raw))
                         return
+                    if func == "run-plugin" and args and args[0].strip('"').rsplit("/", 1)[-1] == "cachekey.so":
+                        self._raw_cachekey_calls.append((self.filename, ctx))
                     subst_args = [
                         self._substitute_strings(arg, ctx) if arg.startswith('"') and arg.endswith('"') else arg for arg in args
                     ]

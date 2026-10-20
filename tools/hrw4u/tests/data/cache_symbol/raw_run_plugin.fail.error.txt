@@ -1,0 +1,1 @@
+tests/data/cache_symbol/raw_run_plugin.fail.input.txt:2:4: error: run-plugin("cachekey.so", ...) can't be used with cache.*: a second cachekey.so call fails at runtime

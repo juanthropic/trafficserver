@@ -1,0 +1,1 @@
+tests/data/cache_symbol/break.fail.input.txt:3:8: error: break can't be used in REMAP with cache.*: it would skip the cachekey.so rule

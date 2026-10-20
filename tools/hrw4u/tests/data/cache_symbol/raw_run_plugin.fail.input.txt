@@ -1,0 +1,4 @@
+REMAP {
+    run-plugin("cachekey.so", "--uri-type=pristine");
+    cache.key.add_headers("X-A");
+}
