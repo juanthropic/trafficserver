@@ -1,0 +1,1 @@
+tests/data/cache_symbol/regex_other_statement.fail.input.txt:2:4: error: cache.key.add_headers() doesn't take a regex argument

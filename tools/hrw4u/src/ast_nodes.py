@@ -133,7 +133,7 @@ class Assignment(Node):
 @dataclass(frozen=True, kw_only=True)
 class FunctionCall(Node):
     name: str
-    args: tuple[ValueExpr, ...]
+    args: tuple[ValueExpr | RegexValue, ...]
 
 
 @dataclass(frozen=True, kw_only=True)

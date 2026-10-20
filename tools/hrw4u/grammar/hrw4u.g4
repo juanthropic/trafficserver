@@ -251,8 +251,10 @@ functionCall
     : funcName=(IDENT | QUALIFIED_IDENT) LPAREN argumentList? RPAREN
     ;
 
+// A lone regex argument is only valid for cache.url.query.remove(/re/).
 argumentList
     : value (COMMA value)*
+    | regex
     ;
 
 regex

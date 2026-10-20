@@ -28,6 +28,7 @@ from typing import Final
 from hrw4u.errors import SymbolResolutionError
 
 CANONICAL_PREFIX: Final[str] = "--canonical-prefix=true"
+REMOVE_MATCH: Final[str] = "cache.url.query.remove(/re/)"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,8 @@ class CacheKeyFlag:
     fixed_value: str | None = None
     # Written as `<name> = ""`, routed like any assignment, not a call.
     assignment: bool = False
+    # One flag per item: a regex can hold a comma, so items can't be joined.
+    repeat: bool = False
 
     @property
     def takes_list(self) -> bool:
@@ -48,6 +51,8 @@ CACHEKEY_STATEMENTS: Final[dict[str, CacheKeyFlag]] = {
     "cache.url.pristine":     CacheKeyFlag("--uri-type", "pristine"),
     "cache.url.host":         CacheKeyFlag("--static-prefix", assignment=True),
     "cache.url.query.remove": CacheKeyFlag("--exclude-params"),
+    # Not a name anyone can type: parse_regex_statement maps remove(/re/) to it.
+    REMOVE_MATCH:             CacheKeyFlag("--exclude-match-params", repeat=True),
     "cache.url.query.keep":   CacheKeyFlag("--include-params"),
     "cache.url.query.sort":   CacheKeyFlag("--sort-params", "true"),
     "cache.url.query":        CacheKeyFlag("--remove-all-params", "true", assignment=True),
@@ -66,7 +71,7 @@ class CacheKeyStatement:
 
 def is_cachekey_statement(name: str) -> bool:
     flag = CACHEKEY_STATEMENTS.get(name)
-    return flag is not None and not flag.assignment
+    return flag is not None and not flag.assignment and name != REMOVE_MATCH
 
 
 def is_cachekey_assignment(lhs: str) -> bool:
@@ -130,11 +135,24 @@ def parse_statement(name: str, args: list[str]) -> CacheKeyStatement:
     return CacheKeyStatement(name, items)
 
 
+def parse_regex_statement(name: str, regex: str) -> CacheKeyStatement:
+    """Validate `cache.url.query.remove(/re/)`. regex is the raw text, slashes included."""
+    if name != "cache.url.query.remove":
+        raise SymbolResolutionError(name, f"{name}() doesn't take a regex argument")
+    pattern = regex[1:-1]
+    if not pattern:
+        raise SymbolResolutionError(name, f"{name}() regex is empty")
+    # header_rewrite unescapes a quoted token: \\ becomes \ and \" becomes ".
+    return CacheKeyStatement(REMOVE_MATCH, (pattern.replace("\\", "\\\\").replace('"', '\\"'),))
+
+
 # Each pair contradicts itself on one run-plugin line: cachekey.so drops or skews one side.
 CONFLICTS: Final[tuple[tuple[str, str], ...]] = (
     ("cache.url.query.keep", "cache.url.query.remove"),
     ("cache.url.query", "cache.url.query.keep"),
     ("cache.url.query", "cache.url.query.remove"),
+    ("cache.url.query.keep", REMOVE_MATCH),
+    ("cache.url.query", REMOVE_MATCH),
 )
 
 
@@ -151,6 +169,8 @@ def check_conflicts(statements: Iterable[CacheKeyStatement]) -> None:
 
 
 def _spell(name: str) -> str:
+    if name == REMOVE_MATCH:
+        return name
     return f'{name} = ""' if CACHEKEY_STATEMENTS[name].assignment else f"{name}()"
 
 
@@ -162,7 +182,9 @@ def merge(statements: Iterable[CacheKeyStatement]) -> list[str]:
 
     flags = [CANONICAL_PREFIX]
     for name, flag in CACHEKEY_STATEMENTS.items():
-        if name in ordered_items:
+        if name in ordered_items and flag.repeat:
+            flags.extend(f"{flag.option}={item}" for item in ordered_items[name])
+        elif name in ordered_items:
             value = ",".join(ordered_items[name]) if flag.takes_list else flag.fixed_value
             flags.append(f"{flag.option}={value}")
     return flags

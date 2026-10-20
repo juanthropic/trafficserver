@@ -1,0 +1,4 @@
+REMAP {
+    cache.url.query.keep("id");
+    cache.url.query.remove(/^utm_/);
+}

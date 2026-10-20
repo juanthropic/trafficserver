@@ -1,0 +1,6 @@
+REMAP {
+    cache.url.query.remove(/^utm_/);
+    cache.url.query.remove("guid");
+    cache.url.query.remove(/^x\d{2,3}$/);
+    cache.url.query.remove(/^utm_/);
+}

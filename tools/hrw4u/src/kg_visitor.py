@@ -368,6 +368,8 @@ class KnowledgeGraphVisitor(hrw4uVisitor, BaseHRWVisitor):
         if ctx.argumentList():
             for arg_ctx in ctx.argumentList().value():
                 args.append(arg_ctx.getText())
+            if ctx.argumentList().regex():
+                args.append(ctx.argumentList().regex().getText())
 
         stmt_id = self._add_node("Statement", {**stmt_properties, "type": "function_call", "function": func_name, "args": args})
 

@@ -159,7 +159,12 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         if ctx.funcName is None:
             raise SymbolResolutionError("function", "Missing function name")
         func = ctx.funcName.text
-        args = [v.getText() for v in ctx.argumentList().value()] if ctx.argumentList() else []
+        arg_list = ctx.argumentList()
+        if arg_list and arg_list.regex():
+            if func != "cache.url.query.remove":
+                raise SymbolResolutionError(func, f"{func}() doesn't take a regex argument")
+            return func, [arg_list.regex().getText()]
+        args = [v.getText() for v in arg_list.value()] if arg_list else []
         return func, args
 
     def _parse_function_args(self, arg_str: str) -> list[str]:
@@ -1017,6 +1022,11 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                             ctx.functionCall().start.column, f"unknown procedure '{func}': not loaded via 'use'", "")
                     if cachekey.is_cachekey_statement(func):
                         call_args = ctx.functionCall().argumentList()
+                        if call_args and call_args.regex():
+                            regex = call_args.regex().getText()
+                            _regex_validator(regex)
+                            self._collect_cachekey(f"{func}({regex})", lambda: cachekey.parse_regex_statement(func, regex))
+                            return
                         raw = [self._cachekey_arg(v) for v in call_args.value()] if call_args else []
                         self._collect_cachekey(f"{func}()", lambda: cachekey.parse_statement(func, raw))
                         return

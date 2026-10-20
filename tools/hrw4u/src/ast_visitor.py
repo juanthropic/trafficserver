@@ -134,7 +134,9 @@ class ASTVisitor(hrw4uVisitor):
     def _visit_function_call(self, ctx) -> FunctionCall:
         name = ctx.funcName.text
         args = ()
-        if ctx.argumentList():
+        if ctx.argumentList() and ctx.argumentList().regex():
+            args = (RegexValue(raw=ctx.argumentList().regex().getText()[1:-1]),)
+        elif ctx.argumentList():
             args = tuple(self._extract_value(v) for v in ctx.argumentList().value())
         return FunctionCall(name=name, args=args, span=self._span(ctx))
 

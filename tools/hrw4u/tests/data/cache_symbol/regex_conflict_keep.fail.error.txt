@@ -1,0 +1,1 @@
+tests/data/cache_symbol/regex_conflict_keep.fail.input.txt:3:4: error: cache.url.query.keep() and cache.url.query.remove(/re/) can't be used together
