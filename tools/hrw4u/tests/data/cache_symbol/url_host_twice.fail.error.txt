@@ -1,0 +1,1 @@
+tests/data/cache_symbol/url_host_twice.fail.input.txt:3:4: error: cache.url.host is set to two different values

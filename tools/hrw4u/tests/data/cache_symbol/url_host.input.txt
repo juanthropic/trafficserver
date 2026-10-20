@@ -1,0 +1,5 @@
+REMAP {
+    cache.url.host = "client-api.itunes.apple.com";
+    cache.url.query.remove("guid");
+    cache.url.host = "client-api.itunes.apple.com";
+}

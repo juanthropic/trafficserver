@@ -1,0 +1,4 @@
+REMAP {
+    cache.url.host = "a.example.com";
+    cache.url.host = "b.example.com";
+}

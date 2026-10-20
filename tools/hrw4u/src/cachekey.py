@@ -46,6 +46,7 @@ class CacheKeyFlag:
 # yapf: disable
 CACHEKEY_STATEMENTS: Final[dict[str, CacheKeyFlag]] = {
     "cache.url.pristine":     CacheKeyFlag("--uri-type", "pristine"),
+    "cache.url.host":         CacheKeyFlag("--static-prefix", assignment=True),
     "cache.url.query.remove": CacheKeyFlag("--exclude-params"),
     "cache.url.query.keep":   CacheKeyFlag("--include-params"),
     "cache.url.query.sort":   CacheKeyFlag("--sort-params", "true"),
@@ -77,9 +78,23 @@ def parse_assignment(lhs: str, rhs: str) -> CacheKeyStatement:
     """Validate `lhs = rhs`. rhs is the raw value text, quotes included."""
     if not is_cachekey_assignment(lhs):
         raise SymbolResolutionError(lhs, f"Unknown cache key assignment: '{lhs}'")
+    if CACHEKEY_STATEMENTS[lhs].takes_list:
+        return CacheKeyStatement(lhs, (_parse_value(lhs, rhs),))
     if rhs != '""':
         raise SymbolResolutionError(lhs, f'{lhs} can only be set to ""')
     return CacheKeyStatement(lhs)
+
+
+def _parse_value(lhs: str, rhs: str) -> str:
+    """One static value, such as the cache.url.host prefix."""
+    if len(rhs) < 3 or not (rhs.startswith('"') and rhs.endswith('"')):
+        raise SymbolResolutionError(lhs, f"{lhs} must be set to a non-empty quoted string")
+    text = rhs[1:-1]
+    if "{" in text:
+        raise SymbolResolutionError(lhs, f"{lhs} must be static: plugin flags can't hold {{...}} values")
+    if any(c.isspace() or c in '",\\' for c in text):
+        raise SymbolResolutionError(lhs, f"{lhs} value \"{text}\" contains whitespace, a comma, a quote, or a backslash")
+    return text
 
 
 def parse_statement(name: str, args: list[str]) -> CacheKeyStatement:
@@ -125,7 +140,11 @@ CONFLICTS: Final[tuple[tuple[str, str], ...]] = (
 
 def check_conflicts(statements: Iterable[CacheKeyStatement]) -> None:
     """Raise if statements that lower to one run-plugin contradict each other."""
+    statements = list(statements)
     names = {stmt.name for stmt in statements}
+    hosts = {stmt.items for stmt in statements if stmt.name == "cache.url.host"}
+    if len(hosts) > 1:
+        raise SymbolResolutionError("cache.url.host", "cache.url.host is set to two different values")
     for first, second in CONFLICTS:
         if first in names and second in names:
             raise SymbolResolutionError(first, f"{_spell(first)} and {_spell(second)} can't be used together")

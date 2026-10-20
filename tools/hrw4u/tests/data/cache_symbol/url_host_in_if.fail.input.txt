@@ -1,0 +1,5 @@
+REMAP {
+    if inbound.req.X-A {
+        cache.url.host = "a.example.com";
+    }
+}
