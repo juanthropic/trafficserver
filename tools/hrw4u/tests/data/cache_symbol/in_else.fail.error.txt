@@ -1,0 +1,1 @@
+tests/data/cache_symbol/in_else.fail.input.txt:7:8: error: cache.key.add_cookies() can't be inside an if: cachekey.so flags are fixed at config load, so they apply to every request

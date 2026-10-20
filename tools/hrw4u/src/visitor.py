@@ -38,9 +38,18 @@ from hrw4u.visitor_base import BaseHRWVisitor
 from hrw4u.validation import Validator
 from hrw4u.procedures import resolve_use_path
 from hrw4u.sandbox import SandboxConfig, SandboxDenialError
+import hrw4u.cachekey as cachekey
 import hrw4u.types as types
 
 _regex_validator = Validator.regex_pattern()
+
+
+class QuotedArg(str):
+    """A procedure binding that was a quoted string at the call site.
+
+    cache.* arguments must be static strings, so a `$param` passed to one must
+    come from a quoted literal, not an identifier.
+    """
 
 
 @dataclass(slots=True)
@@ -93,6 +102,10 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         self._proc_search_paths: list[Path] = list(proc_search_paths) if proc_search_paths else []
         self._source_text: str = ""
         self._current_var_scope: types.VarScope = types.VarScope.TXN
+
+        self._if_depth = 0
+        self._cachekey_used = False
+        self._cachekey_stmts: list[cachekey.CacheKeyStatement] = []
 
     def _sandbox_check(self, ctx, check_fn) -> bool:
         """Run a sandbox check, trapping any denial error into the error collector.
@@ -380,7 +393,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             for val_ctx in call_ctx.argumentList().value():
                 text = self._get_value_text(val_ctx)
                 if text.startswith('"') and text.endswith('"'):
-                    text = self._substitute_strings(text, call_ctx)[1:-1]
+                    text = QuotedArg(self._substitute_strings(text, call_ctx)[1:-1])
                 call_args.append(text)
 
         required = sum(1 for p in sig.params if p.default_ctx is None)
@@ -397,7 +410,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             else:
                 default = self._get_value_text(param.default_ctx)
                 if default.startswith('"') and default.endswith('"'):
-                    default = default[1:-1]
+                    default = QuotedArg(default[1:-1])
                 bindings[param.name] = default
 
         return bindings
@@ -426,8 +439,9 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         """
         items = block_ctx.blockItem()
         is_first = not in_statement_block
+        first_item = True
 
-        for idx, item in enumerate(items):
+        for item in items:
             is_conditional = item.conditional() is not None
             is_comment = item.commentLine() is not None
             proc_info = self._get_proc_call_info(item)
@@ -435,11 +449,14 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             if is_comment:
                 if self.preserve_comments:
                     self.visit(item.commentLine())
+            elif self._is_cachekey_flag_item(item):
+                self.visit(item.statement())
+                continue
             elif proc_info:
                 _, call_ctx = proc_info
-                in_statement_block = self._section_expand_proc_call(call_ctx, hook, in_statement_block, is_first and idx == 0)
+                in_statement_block = self._section_expand_proc_call(call_ctx, hook, in_statement_block, is_first and first_item)
             elif is_conditional or not in_statement_block:
-                if not (is_first and idx == 0):
+                if not (is_first and first_item):
                     self._flush_condition()
                     self.output.append("")
 
@@ -455,6 +472,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             else:
                 with self.stmt_indented():
                     self.visit(item.statement())
+            first_item = False
 
         return in_statement_block
 
@@ -466,6 +484,18 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
 
         with self._proc_context(sig, bindings):
             return self._expand_proc_as_section_body(sig.body_ctx, hook, in_statement_block)
+
+    @staticmethod
+    def _is_cachekey_flag_item(item) -> bool:
+        """True for a cache.* statement that only adds a flag, so it emits no rule of its own."""
+        stmt = item.statement()
+        if stmt is None:
+            return False
+        if stmt.functionCall():
+            return cachekey.is_cachekey_statement(stmt.functionCall().funcName.text)
+        if stmt.EQUAL() and stmt.lhs is not None:
+            return cachekey.is_cachekey_assignment(stmt.lhs.text)
+        return False
 
     def _get_proc_call_info(self, item) -> tuple[ProcSig, Any] | None:
         """If item (sectionBody or blockItem) is a procedure call, return (sig, call_ctx)."""
@@ -747,7 +777,46 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
             with self.trap(ctx):
                 hook = self._prepare_section(ctx)
             if hook:
+                start = len(self.output)
+                self._cachekey_used = False
+                self._cachekey_stmts = []
                 self._emit_section_body(ctx.sectionBody(), hook)
+                if self._cachekey_used:
+                    self._emit_cachekey_rules(hook, start)
+
+    def _emit_cachekey_rules(self, hook: str, start: int) -> None:
+        """Emit the one cachekey.so rule, last in the section."""
+        self._flush_condition()
+        if len(self.output) > start:
+            self.output.append("")
+        self._emit_section_header(hook, [])
+        with self.stmt_indented():
+            self.emit_statement(cachekey.render(cachekey.merge(self._cachekey_stmts)))
+
+    def _collect_cachekey(self, spelling: str, parse) -> None:
+        if self.current_section != SectionType.REMAP:
+            raise SymbolResolutionError(spelling, f"{spelling} is only allowed in REMAP")
+        if self._if_depth:
+            raise SymbolResolutionError(
+                spelling,
+                f"{spelling} can't be inside an if: cachekey.so flags are fixed at config load, so they apply to every request")
+        stmt = parse()
+        cachekey.check_conflicts([*self._cachekey_stmts, stmt])
+        self._cachekey_stmts.append(stmt)
+        self._cachekey_used = True
+
+    def _cachekey_arg(self, val_ctx) -> str:
+        """Return the raw, quoted argument text, with procedure parameters bound."""
+        if val_ctx.paramRef():
+            text = self._get_value_text(val_ctx)
+            if not isinstance(text, QuotedArg):
+                name = val_ctx.paramRef().IDENT().getText()
+                raise SymbolResolutionError(name, f"cache.* argument ${name} must be bound to a quoted string")
+            return f'"{text}"'
+        text = val_ctx.getText()
+        if self._proc_bindings and text.startswith('"'):
+            text = self._PARAM_REF_PATTERN.sub(lambda m: self._proc_bindings.get(m.group(1), m.group(0)), text)
+        return text
 
     def _prepare_section(self, ctx):
         """Extract section info and validate. Returns hook name."""
@@ -792,6 +861,8 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                         pending_leading_comments.append(body)
                     else:
                         self.visit(body)
+            elif self._is_cachekey_flag_item(body):
+                self.visit(body.statement())
             elif proc_info:
                 if not first_hook_emitted:
                     first_hook_emitted = True
@@ -887,6 +958,11 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                             self.filename,
                             ctx.functionCall().start.line,
                             ctx.functionCall().start.column, f"unknown procedure '{func}': not loaded via 'use'", "")
+                    if cachekey.is_cachekey_statement(func):
+                        call_args = ctx.functionCall().argumentList()
+                        raw = [self._cachekey_arg(v) for v in call_args.value()] if call_args else []
+                        self._collect_cachekey(f"{func}()", lambda: cachekey.parse_statement(func, raw))
+                        return
                     subst_args = [
                         self._substitute_strings(arg, ctx) if arg.startswith('"') and arg.endswith('"') else arg for arg in args
                     ]
@@ -899,6 +975,10 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                     if ctx.lhs is None:
                         raise SymbolResolutionError("assignment", "Missing left-hand side in assignment")
                     lhs = ctx.lhs.text
+                    if cachekey.is_cachekey_assignment(lhs):
+                        rhs = self._cachekey_arg(ctx.value())
+                        self._collect_cachekey(f"{lhs} = {rhs}", lambda: cachekey.parse_assignment(lhs, rhs))
+                        return
                     rhs = self._get_value_text(ctx.value())
                     if rhs.startswith('"') and rhs.endswith('"'):
                         rhs = self._substitute_strings(rhs, ctx)
@@ -995,8 +1075,12 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
 
     def visitBlock(self, ctx) -> None:
         with self.debug_context("visitBlock"):
-            with self.stmt_indented():
-                self._visit_block_items(ctx)
+            self._if_depth += 1
+            try:
+                with self.stmt_indented():
+                    self._visit_block_items(ctx)
+            finally:
+                self._if_depth -= 1
 
     def visitCondition(self, ctx) -> None:
         with self.debug_context("visitCondition"):

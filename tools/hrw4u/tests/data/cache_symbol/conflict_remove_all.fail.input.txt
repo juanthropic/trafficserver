@@ -1,0 +1,4 @@
+REMAP {
+    cache.url.query.remove("b");
+    cache.url.query = "";
+}

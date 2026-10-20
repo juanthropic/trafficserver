@@ -1,0 +1,6 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header X-First "1"
+    set-header X-From-Proc "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--include-headers=X-A" "--include-cookies=c1"

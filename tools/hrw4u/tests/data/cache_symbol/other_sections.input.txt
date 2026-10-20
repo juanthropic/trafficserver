@@ -1,0 +1,14 @@
+SEND_REQUEST {
+    outbound.req.X-Sent = "1";
+}
+
+REMAP {
+    cache.url.pristine();
+    inbound.req.X-Mapped = "1";
+}
+
+SEND_RESPONSE {
+    if cache() == "hit-fresh" {
+        inbound.resp.X-Cache = "hit";
+    }
+}

@@ -1,0 +1,9 @@
+procedure local::headers($h, $c="itst") {
+    cache.key.add_headers($h);
+    cache.key.add_cookies($c);
+    cache.url.query.remove("$h");
+}
+
+REMAP {
+    local::headers("X-A,X-B");
+}

@@ -1,0 +1,1 @@
+tests/data/cache_symbol/conflict_keep_remove.fail.input.txt:3:4: error: cache.url.query.keep() and cache.url.query.remove() can't be used together

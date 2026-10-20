@@ -1,0 +1,12 @@
+cond %{SEND_REQUEST_HDR_HOOK} [AND]
+    set-header X-Sent "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header X-Mapped "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine"
+
+cond %{SEND_RESPONSE_HDR_HOOK} [AND]
+cond %{CACHE} ="hit-fresh"
+    set-header X-Cache "hit"

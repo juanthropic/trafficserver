@@ -1,0 +1,9 @@
+procedure local::key() {
+    cache.key.add_headers("X-A");
+}
+
+REMAP {
+    if inbound.req.X-A {
+        local::key();
+    }
+}

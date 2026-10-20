@@ -1,0 +1,14 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header X-One "1"
+    set-header X-Two "2"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Three} ="" [NOT]
+    set-config "proxy.config.http.cache.http" 0
+# the key comes last no matter where cache.* sits
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header X-Four "4"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--include-headers=X-One"

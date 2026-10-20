@@ -1,0 +1,1 @@
+tests/data/cache_symbol/assignment_in_if.fail.input.txt:3:8: error: cache.url.query = "" can't be inside an if: cachekey.so flags are fixed at config load, so they apply to every request

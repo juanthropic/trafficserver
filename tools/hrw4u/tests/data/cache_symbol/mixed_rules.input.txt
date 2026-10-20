@@ -1,0 +1,11 @@
+REMAP {
+    inbound.req.X-One = "1";
+    cache.url.pristine();
+    inbound.req.X-Two = "2";
+    if inbound.req.X-Three {
+        cache.bypass();
+    }
+    # the key comes last no matter where cache.* sits
+    cache.key.add_headers("X-One");
+    inbound.req.X-Four = "4";
+}

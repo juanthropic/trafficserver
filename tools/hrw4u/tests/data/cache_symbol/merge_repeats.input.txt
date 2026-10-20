@@ -1,0 +1,8 @@
+REMAP {
+    cache.key.add_headers("X-A,X-B");
+    cache.url.query.remove("a");
+    cache.key.add_headers("X-B,X-C");
+    cache.url.query.remove("b,a");
+    cache.url.pristine();
+    cache.url.pristine();
+}

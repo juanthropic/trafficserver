@@ -1,0 +1,11 @@
+procedure local::key() {
+    cache.url.pristine();
+    inbound.req.X-From-Proc = "1";
+    cache.key.add_headers("X-A");
+}
+
+REMAP {
+    inbound.req.X-First = "1";
+    local::key();
+    cache.key.add_cookies("c1");
+}

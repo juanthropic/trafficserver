@@ -1,0 +1,1 @@
+tests/data/cache_symbol/path_value.fail.input.txt:2:4: error: cache.url.path can only be set to ""

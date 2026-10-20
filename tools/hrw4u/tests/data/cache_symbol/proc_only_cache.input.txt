@@ -1,0 +1,9 @@
+procedure local::key() {
+    cache.url.pristine();
+    cache.key.add_headers("X-A");
+}
+
+REMAP {
+    local::key();
+    inbound.req.X-After = "1";
+}

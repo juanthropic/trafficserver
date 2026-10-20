@@ -1,0 +1,8 @@
+REMAP {
+    cache.key.add_cookies("c1");
+    cache.key.add_headers("X-A");
+    cache.url.path = "";
+    cache.url.query.sort();
+    cache.url.query.remove("a");
+    cache.url.pristine();
+}

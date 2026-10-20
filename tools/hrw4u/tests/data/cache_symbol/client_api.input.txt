@@ -1,0 +1,21 @@
+REMAP {
+    inbound.req.@Prism-Country = "";
+    if geo.COUNTRY in ["CN", "RU"] {
+        inbound.req.@Prism-Country = "{geo.COUNTRY}";
+    }
+    if inbound.req.User-Country == "CN" with NOCASE {
+        inbound.req.@Prism-Country = "{inbound.req.User-Country}";
+    }
+    if inbound.req.@Prism-Country {
+        inbound.req.User-Country = "{inbound.req.@Prism-Country}";
+    }
+
+    if !inbound.req.X-Apple-Store-Front || inbound.req.X-Apple-Store-Front ~ /vip$/ {
+        cache.bypass();
+    }
+
+    cache.url.pristine();
+    cache.url.query.remove("ign-sf,guid,ign-lr,ign-mpt,ign-msr,x-itunes-client-guid,ign-refClientId,X-JS-SP-TOKEN,X-JS-TIMESTAMP");
+    cache.key.add_headers("X-Apple-Store-Front,@Prism-Country");
+    cache.key.add_cookies("itst,itre,itfe,itrv");
+}

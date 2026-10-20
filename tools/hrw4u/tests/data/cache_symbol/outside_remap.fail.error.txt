@@ -1,0 +1,1 @@
+tests/data/cache_symbol/outside_remap.fail.input.txt:2:4: error: cache.url.pristine() is only allowed in REMAP

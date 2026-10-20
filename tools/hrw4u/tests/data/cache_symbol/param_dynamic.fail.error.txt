@@ -1,0 +1,1 @@
+tests/data/cache_symbol/param_dynamic.fail.input.txt:2:4: error: cache.key.add_headers() argument must be static: plugin flags can't hold {...} values
