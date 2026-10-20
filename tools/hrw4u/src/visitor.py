@@ -504,7 +504,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         if stmt.functionCall():
             return cachekey.is_cachekey_statement(stmt.functionCall().funcName.text)
         if stmt.EQUAL() and stmt.lhs is not None:
-            return cachekey.is_cachekey_assignment(stmt.lhs.text)
+            return stmt.lhs.text == "cache.key" or cachekey.is_cachekey_assignment(stmt.lhs.text)
         return False
 
     def _get_proc_call_info(self, item) -> tuple[ProcSig, Any] | None:
@@ -821,10 +821,20 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                 spelling,
                 f"{spelling} can't be inside an if: cachekey.so flags are fixed at config load, so they apply to every request")
         stmt = parse()
-        cachekey.check_conflicts([*self._cachekey_stmts, stmt])
-        self._cachekey_stmts.append(stmt)
+        if stmt is None:
+            self._cachekey_stmts.clear()
+        else:
+            cachekey.check_conflicts([*self._cachekey_stmts, stmt])
+            self._cachekey_stmts.append(stmt)
         self._cachekey_used = True
         self._cachekey_in_file = True
+
+    @staticmethod
+    def _parse_cachekey_reset(rhs: str) -> None:
+        """cache.key = "" drops the cache.url.* and cache.key.* statements before it."""
+        if rhs != '""':
+            raise SymbolResolutionError("cache.key", 'cache.key can only be set to ""')
+        return None
 
     def _cachekey_arg(self, val_ctx) -> str:
         """Return the raw, quoted argument text, with procedure parameters bound."""
@@ -1044,6 +1054,10 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                     if ctx.lhs is None:
                         raise SymbolResolutionError("assignment", "Missing left-hand side in assignment")
                     lhs = ctx.lhs.text
+                    if lhs == "cache.key":
+                        rhs = self._cachekey_arg(ctx.value())
+                        self._collect_cachekey('cache.key = ""', lambda: self._parse_cachekey_reset(rhs))
+                        return
                     if cachekey.is_cachekey_assignment(lhs):
                         rhs = self._cachekey_arg(ctx.value())
                         self._collect_cachekey(f"{lhs} = {rhs}", lambda: cachekey.parse_assignment(lhs, rhs))

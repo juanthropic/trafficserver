@@ -1,0 +1,8 @@
+REMAP {
+    cache.url.query.keep("id");
+    cache.key.add_headers("X-A");
+    cache.key += "{inbound.req.X-B}";
+    cache.key = "";
+    cache.url.query.remove("guid");
+    cache.key.add_cookies("c1");
+}

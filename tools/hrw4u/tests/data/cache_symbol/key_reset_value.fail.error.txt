@@ -1,0 +1,1 @@
+tests/data/cache_symbol/key_reset_value.fail.input.txt:2:4: error: cache.key can only be set to ""

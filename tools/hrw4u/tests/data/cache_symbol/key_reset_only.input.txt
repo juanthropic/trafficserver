@@ -1,0 +1,4 @@
+REMAP {
+    cache.key.add_headers("X-A");
+    cache.key = "";
+}
