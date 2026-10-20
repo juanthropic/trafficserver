@@ -1,0 +1,10 @@
+CACHEKEY {
+    cache.key.require_headers("X-Apple-Store-Front,X-Dsid");
+    cache.key.require_headers("X-Apple-Store-Front");
+    cache.key.add_headers("X-Apple-Store-Front");
+    if inbound.req.Host == "a.example.com" {
+        cache.key.add_cookies("itst");
+    } else {
+        cache.key.add_cookies("itre");
+    }
+}

@@ -1,0 +1,1 @@
+(program (programItem (section CACHEKEY { (sectionBody (statement (functionCall cache.url.query.remove ( (argumentList (value "ign-sf,guid,ign-lr,ign-mpt,ign-msr,x-itunes-client-guid,ign-refClientId,X-JS-SP-TOKEN,X-JS-TIMESTAMP")) )) ;)) })) <EOF>)

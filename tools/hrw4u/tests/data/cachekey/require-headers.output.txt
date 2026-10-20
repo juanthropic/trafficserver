@@ -1,0 +1,5 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Apple-Store-Front} =""
+    set-config "proxy.config.http.cache.http" 0
+else
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=X-Apple-Store-Front"

@@ -1,0 +1,28 @@
+REMAP {
+    # PMUSER_USERCOUNTRY (features 6, 8, 11)
+    inbound.req.@Prism-Country = "";
+    if geo.COUNTRY in ["CN", "RU"] {
+        inbound.req.@Prism-Country = "{geo.COUNTRY}";
+    }
+    if inbound.req.User-Country == "CN" with NOCASE {
+        inbound.req.@Prism-Country = "{inbound.req.User-Country}";
+    }
+
+    # Feature 9
+    if inbound.req.@Prism-Country != "" {
+        inbound.req.User-Country = "{inbound.req.@Prism-Country}";
+    }
+
+    # Vip rule (feature 10), only if the owners keep it
+    if inbound.req.X-Apple-Store-Front ~ /vip$/ {
+        set-config("proxy.config.http.cache.http", 0);
+    }
+}
+
+CACHEKEY {
+    cache.url.pristine();
+    cache.key.require_headers("X-Apple-Store-Front");
+    cache.key.add_headers("X-Apple-Store-Front,@Prism-Country");
+    cache.key.add_cookies("itst,itre,itfe,itrv");
+    cache.url.query.remove("ign-sf,guid,ign-lr,ign-mpt,ign-msr,x-itunes-client-guid,ign-refClientId,X-JS-SP-TOKEN,X-JS-TIMESTAMP");
+}

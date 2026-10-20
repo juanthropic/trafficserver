@@ -1,0 +1,9 @@
+procedure local::store-front() {
+    cache.key.require_headers("X-Apple-Store-Front");
+    cache.key.add_headers("X-Apple-Store-Front");
+}
+
+CACHEKEY {
+    cache.url.pristine();
+    local::store-front();
+}

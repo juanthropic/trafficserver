@@ -1,0 +1,8 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Apple-Store-Front} =""
+    set-config "proxy.config.http.cache.http" 0
+elif
+    cond %{CLIENT-URL:PATH} /^WebObjects\/MZSearch/
+        run-plugin "cachekey.so" "--canonical-prefix=true" "--include-params=term,media" "--include-headers=X-Apple-Store-Front"
+else
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=X-Apple-Store-Front"

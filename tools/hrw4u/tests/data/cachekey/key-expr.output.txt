@@ -1,0 +1,11 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:Host} ="a.example.com"
+    rm-header @Prism-Key-01
+    set-header @Prism-Key-01 "%{GEO:COUNTRY}"
+    rm-header @Prism-Key-02
+    set-header @Prism-Key-02 "%{CLIENT-HEADER:X-Tenant}-%{METHOD}"
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=X-A,@Prism-Key-01,@Prism-Key-02"
+else
+    rm-header @Prism-Key-01
+    set-header @Prism-Key-01 "%{GEO:COUNTRY}"
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=X-A,@Prism-Key-01"

@@ -1,0 +1,4 @@
+CACHEKEY {
+    cache.key.require_headers("X-Apple-Store-Front");
+    cache.key.add_headers("X-Apple-Store-Front");
+}

@@ -1,0 +1,12 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    rm-header @Prism-Country
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{GEO:COUNTRY} ("CN","RU")
+    set-header @Prism-Country "%{GEO:COUNTRY}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=@Prism-Country"
+
+cond %{SEND_RESPONSE_HDR_HOOK} [AND]
+    set-header X-Cache-Debug "1"

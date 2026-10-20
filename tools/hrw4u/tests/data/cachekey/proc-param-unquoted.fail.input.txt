@@ -1,0 +1,7 @@
+procedure local::hdr($h) {
+    cache.key.add_headers($h);
+}
+
+CACHEKEY {
+    local::hdr(X-Apple-Store-Front);
+}

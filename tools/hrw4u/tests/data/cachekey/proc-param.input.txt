@@ -1,0 +1,18 @@
+procedure local::hdr($h) {
+    cache.key.add_headers($h);
+}
+
+procedure local::cookie($c="itst") {
+    cache.key.add_cookies("$c");
+}
+
+procedure local::pass($h) {
+    local::hdr($h);
+}
+
+CACHEKEY {
+    local::hdr("X-Apple-Store-Front");
+    local::cookie();
+    local::cookie(itre);
+    local::pass("@Prism-Country");
+}

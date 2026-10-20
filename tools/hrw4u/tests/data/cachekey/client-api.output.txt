@@ -1,0 +1,27 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+# PMUSER_USERCOUNTRY (features 6, 8, 11)
+    rm-header @Prism-Country
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{GEO:COUNTRY} ("CN","RU")
+    set-header @Prism-Country "%{GEO:COUNTRY}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:User-Country} ="CN" [NOCASE]
+    set-header @Prism-Country "%{CLIENT-HEADER:User-Country}"
+# Feature 9
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:@Prism-Country} ="" [NOT]
+    set-header User-Country "%{CLIENT-HEADER:@Prism-Country}"
+# Vip rule (feature 10), only if the owners keep it
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Apple-Store-Front} /vip$/
+    set-config "proxy.config.http.cache.http" 0
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Apple-Store-Front} =""
+    set-config "proxy.config.http.cache.http" 0
+else
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--exclude-params=ign-sf,guid,ign-lr,ign-mpt,ign-msr,x-itunes-client-guid,ign-refClientId,X-JS-SP-TOKEN,X-JS-TIMESTAMP" "--include-headers=X-Apple-Store-Front,@Prism-Country" "--include-cookies=itst,itre,itfe,itrv"

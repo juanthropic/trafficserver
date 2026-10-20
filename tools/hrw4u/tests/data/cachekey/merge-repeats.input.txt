@@ -1,0 +1,8 @@
+CACHEKEY {
+    cache.url.query.remove("a,b");
+    cache.key.add_headers("X-A");
+    cache.url.query.remove("b,c");
+    cache.key.add_headers("X-B,X-A");
+    cache.url.pristine();
+    cache.url.pristine();
+}

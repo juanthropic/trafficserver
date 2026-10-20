@@ -1,0 +1,37 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Dsid} ="" [NOT]
+    set-header @Prism-Dsid "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:Media-User-Token} ="" [NOT]
+    set-header @Prism-Media-UT "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:Music-User-Token} ="" [NOT]
+    set-header @Prism-Music-UT "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:Siri-User-Token} ="" [NOT]
+    set-header @Prism-Siri-UT "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:SID} ="" [NOT]
+    set-header @Prism-SID "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{GEO:COUNTRY} ="CN"
+    set-header @Prism-Country "%{GEO:COUNTRY}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:@Prism-Country} ="" [NOT]
+    set-header User-Country "%{CLIENT-HEADER:@Prism-Country}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:Host} ="amp-api.podcasts.apple.com" [AND]
+cond %{CLIENT-URL:PATH} /^v1\/catalog\/[^\/]+\/podcasts\/[^\/]+\/episodes/
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--sort-params=true" "--include-headers=User-Country,Origin,@Prism-Dsid,@Prism-Country,@Prism-Media-UT,@Prism-Music-UT,@Prism-Siri-UT,@Prism-SID" "--include-cookies=itst,itfe,itre,itma,itrv"
+elif
+    cond %{CLIENT-HEADER:Host} /^amp-api(-edge)?\.(music|podcasts|videos|media|shazam|snapshot)\.apple\.com$/
+        run-plugin "cachekey.so" "--canonical-prefix=true" "--sort-params=true" "--include-headers=User-Country,Origin,@Prism-Dsid,@Prism-Country,X-Apple-ABC,@Prism-Media-UT,@Prism-Music-UT,@Prism-Siri-UT,@Prism-SID" "--include-cookies=itst,itfe,itre,itma,itrv,xp_abc"
+else
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--sort-params=true" "--include-headers=User-Country,Origin,@Prism-Dsid,@Prism-Country,X-Apple-ABC" "--include-cookies=itst,itfe,itre,itma,xp_abc"

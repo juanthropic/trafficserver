@@ -1,0 +1,42 @@
+REMAP {
+    if inbound.req.X-Dsid {
+        inbound.req.@Prism-Dsid = "1";
+    }
+    if inbound.req.Media-User-Token {
+        inbound.req.@Prism-Media-UT = "1";
+    }
+    if inbound.req.Music-User-Token {
+        inbound.req.@Prism-Music-UT = "1";
+    }
+    if inbound.req.Siri-User-Token {
+        inbound.req.@Prism-Siri-UT = "1";
+    }
+    if inbound.req.SID {
+        inbound.req.@Prism-SID = "1";
+    }
+
+    if geo.COUNTRY == "CN" {
+        inbound.req.@Prism-Country = "{geo.COUNTRY}";
+    }
+    if inbound.req.@Prism-Country {
+        inbound.req.User-Country = "{inbound.req.@Prism-Country}";
+    }
+}
+
+CACHEKEY {
+    cache.url.query.sort();
+    cache.key.add_headers("User-Country,Origin,@Prism-Dsid,@Prism-Country");
+    cache.key.add_cookies("itst,itfe,itre,itma");
+
+    # Episodes first: amp-api.podcasts also matches the media-host regex.
+    if inbound.req.Host == "amp-api.podcasts.apple.com" && inbound.url.path ~ /^v1\/catalog\/[^\/]+\/podcasts\/[^\/]+\/episodes/ {
+        cache.key.add_headers("@Prism-Media-UT,@Prism-Music-UT,@Prism-Siri-UT,@Prism-SID");
+        cache.key.add_cookies("itrv");
+    } elif inbound.req.Host ~ /^amp-api(-edge)?\.(music|podcasts|videos|media|shazam|snapshot)\.apple\.com$/ {
+        cache.key.add_headers("X-Apple-ABC,@Prism-Media-UT,@Prism-Music-UT,@Prism-Siri-UT,@Prism-SID");
+        cache.key.add_cookies("itrv,xp_abc");
+    } else {
+        cache.key.add_headers("X-Apple-ABC");
+        cache.key.add_cookies("xp_abc");
+    }
+}

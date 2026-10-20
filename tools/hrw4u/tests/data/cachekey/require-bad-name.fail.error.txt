@@ -1,0 +1,1 @@
+tests/data/cachekey/require-bad-name.fail.input.txt:2:4: error: Invalid HTTP header name format

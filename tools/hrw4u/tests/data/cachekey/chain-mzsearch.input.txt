@@ -1,0 +1,7 @@
+CACHEKEY {
+    cache.key.require_headers("X-Apple-Store-Front");
+    cache.key.add_headers("X-Apple-Store-Front");
+    if inbound.url.path ~ /^WebObjects\/MZSearch/ {
+        cache.url.query.keep("term,media");
+    }
+}

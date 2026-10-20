@@ -1,0 +1,5 @@
+CACHEKEY {
+    if inbound.req.Host == "a.example.com" {
+        cache.key.require_headers("X-A");
+    }
+}
