@@ -1,0 +1,3 @@
+REMAP {
+    cache.key.require_headers("X-Apple-Store-Front");
+}
