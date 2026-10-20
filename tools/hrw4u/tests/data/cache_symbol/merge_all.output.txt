@@ -1,2 +1,8 @@
 cond %{REMAP_PSEUDO_HOOK} [AND]
-    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--exclude-params=a" "--sort-params=true" "--remove-path=true" "--include-headers=X-A" "--include-cookies=c1"
+    rm-header @Prism-Key-01
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header @Prism-Key-01 "%{CLIENT-HEADER:X-Expr}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--exclude-params=a" "--sort-params=true" "--remove-path=true" "--include-headers=@Prism-Key-01,X-A" "--include-cookies=c1"

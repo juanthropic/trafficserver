@@ -1,0 +1,15 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    rm-header @Prism-Key-01
+    rm-header @Prism-Key-02
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    set-header @Prism-Key-01 "%{CLIENT-HEADER:X-A}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:X-Foo} ="" [NOT]
+    set-header @Prism-Key-02 "foo-%{CLIENT-HEADER:X-Foo}"
+else
+    set-header X-Bar "1"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--include-headers=@Prism-Key-01,@Prism-Key-02"

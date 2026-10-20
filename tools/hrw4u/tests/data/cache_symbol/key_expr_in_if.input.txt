@@ -1,0 +1,8 @@
+REMAP {
+    cache.key += "{inbound.req.X-A}";
+    if inbound.req.X-Foo {
+        cache.key += "foo-{inbound.req.X-Foo}";
+    } else {
+        inbound.req.X-Bar = "1";
+    }
+}

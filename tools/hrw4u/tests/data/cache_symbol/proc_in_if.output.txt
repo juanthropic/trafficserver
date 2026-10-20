@@ -1,0 +1,9 @@
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    rm-header @Prism-Key-01
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+cond %{CLIENT-HEADER:@Prism-Country} ="" [NOT]
+    set-header @Prism-Key-01 "%{CLIENT-HEADER:@Prism-Country}"
+
+cond %{REMAP_PSEUDO_HOOK} [AND]
+    run-plugin "cachekey.so" "--canonical-prefix=true" "--uri-type=pristine" "--include-headers=@Prism-Key-01"

@@ -1,0 +1,10 @@
+procedure local::country() {
+    cache.key += "{inbound.req.@Prism-Country}";
+}
+
+REMAP {
+    if inbound.req.@Prism-Country {
+        local::country();
+    }
+    cache.url.pristine();
+}

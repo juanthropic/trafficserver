@@ -1,0 +1,3 @@
+READ_REQUEST {
+    cache.key += "{inbound.req.X-A}";
+}

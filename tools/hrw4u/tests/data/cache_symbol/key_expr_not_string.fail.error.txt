@@ -1,0 +1,1 @@
+tests/data/cache_symbol/key_expr_not_string.fail.input.txt:2:4: error: cache.key += takes a non-empty quoted string

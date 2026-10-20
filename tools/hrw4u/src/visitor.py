@@ -106,6 +106,7 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         self._if_depth = 0
         self._cachekey_used = False
         self._cachekey_stmts: list[cachekey.CacheKeyStatement] = []
+        self._cachekey_headers: list[str] = []
 
     def _sandbox_check(self, ctx, check_fn) -> bool:
         """Run a sandbox check, trapping any denial error into the error collector.
@@ -780,12 +781,13 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                 start = len(self.output)
                 self._cachekey_used = False
                 self._cachekey_stmts = []
+                self._cachekey_headers = []
                 self._emit_section_body(ctx.sectionBody(), hook)
                 if self._cachekey_used:
                     self._emit_cachekey_rules(hook, start)
 
     def _emit_cachekey_rules(self, hook: str, start: int) -> None:
-        """Emit the one cachekey.so rule, last in the section."""
+        """Emit the one cachekey.so rule last, and clear the += headers first."""
         self._flush_condition()
         if len(self.output) > start:
             self.output.append("")
@@ -793,10 +795,18 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         with self.stmt_indented():
             self.emit_statement(cachekey.render(cachekey.merge(self._cachekey_stmts)))
 
-    def _collect_cachekey(self, spelling: str, parse) -> None:
+        if self._cachekey_headers:
+            # A client could otherwise send its own @Prism-Key-NN and pick its key.
+            lines = [self.format_with_indent(f"cond %{{{hook}}} [AND]", self.cond_indent)]
+            for name in self._cachekey_headers:
+                rm = self.symbol_resolver.resolve_assignment(f"inbound.req.{name}", '""', SectionType.REMAP)
+                lines.append(self.format_with_indent(rm, self.stmt_indent + 1))
+            self.output[start:start] = [*lines, ""]
+
+    def _collect_cachekey(self, spelling: str, parse, *, conditional_ok: bool = False) -> None:
         if self.current_section != SectionType.REMAP:
             raise SymbolResolutionError(spelling, f"{spelling} is only allowed in REMAP")
-        if self._if_depth:
+        if self._if_depth and not conditional_ok:
             raise SymbolResolutionError(
                 spelling,
                 f"{spelling} can't be inside an if: cachekey.so flags are fixed at config load, so they apply to every request")
@@ -817,6 +827,26 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
         if self._proc_bindings and text.startswith('"'):
             text = self._PARAM_REF_PATTERN.sub(lambda m: self._proc_bindings.get(m.group(1), m.group(0)), text)
         return text
+
+    def _cachekey_add_expr(self, ctx) -> None:
+        """cache.key += "<expr>": copy the value to an @ header, key on that header."""
+        val = ctx.value()
+        if val.paramRef():
+            text = self._get_value_text(val)
+            rhs = f'"{text}"' if isinstance(text, QuotedArg) else text
+        else:
+            rhs = val.getText()
+            if rhs.startswith('"') and rhs.endswith('"'):
+                rhs = self._substitute_strings(rhs, ctx)
+        if len(rhs) <= 2 or not (rhs.startswith('"') and rhs.endswith('"')):
+            raise SymbolResolutionError("cache.key", "cache.key += takes a non-empty quoted string")
+
+        # Zero-padded: cachekey.so sorts --include-headers as strings, and the name is in the key.
+        header = f"@Prism-Key-{len(self._cachekey_headers) + 1:02d}"
+        self._collect_cachekey(
+            "cache.key +=", lambda: cachekey.CacheKeyStatement("cache.key.add_headers", (header,)), conditional_ok=True)
+        self._cachekey_headers.append(header)
+        self.emit_statement(self.symbol_resolver.resolve_assignment(f"inbound.req.{header}", rhs, self.current_section))
 
     def _prepare_section(self, ctx):
         """Extract section info and validate. Returns hook name."""
@@ -992,6 +1022,9 @@ class HRW4UVisitor(hrw4uVisitor, BaseHRWVisitor):
                     if ctx.lhs is None:
                         raise SymbolResolutionError("assignment", "Missing left-hand side in += assignment")
                     lhs = ctx.lhs.text
+                    if lhs == "cache.key":
+                        self._cachekey_add_expr(ctx)
+                        return
                     rhs = self._get_value_text(ctx.value())
                     if rhs.startswith('"') and rhs.endswith('"'):
                         rhs = self._substitute_strings(rhs, ctx)

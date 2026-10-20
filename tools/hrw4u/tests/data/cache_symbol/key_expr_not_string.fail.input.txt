@@ -1,0 +1,3 @@
+REMAP {
+    cache.key += inbound.req.X-A;
+}

@@ -1,4 +1,5 @@
 REMAP {
+    cache.key += "{inbound.req.X-Expr}";
     cache.key.add_cookies("c1");
     cache.key.add_headers("X-A");
     cache.url.path = "";
