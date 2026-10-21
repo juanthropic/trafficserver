@@ -893,6 +893,109 @@ LSP_FUNCTION_DOCUMENTATION: Final[dict[str, FunctionDoc]] = {
             maps_to="%{CACHE}",
             usage_context="Used in conditional expressions for cache-based routing and debugging",
             examples=["if cache() {\n    // Handle cached response\n}", "!cache() && inbound.method == \"GET\""]),
+    "cache.bypass":
+        FunctionDoc(
+            name="Cache Bypass",
+            category="Cache Statement",
+            description="Skips the cache for this request: no lookup and no store. Not a key flag; use it when a required key part is missing.",
+            syntax="cache.bypass()",
+            maps_to="set-config \"proxy.config.http.cache.http\" 0",
+            usage_context="REMAP only. Allowed inside an if.",
+            examples=["if !inbound.req.X-Apple-Store-Front {\n    cache.bypass();\n}"]),
+    "cache.url.pristine":
+        FunctionDoc(
+            name="Cache Key Pristine URL",
+            category="Cache Key Statement",
+            description="Builds the cache key from the client's original URL, so URL edits in REMAP don't change the key.",
+            syntax="cache.url.pristine()",
+            maps_to="cachekey.so --uri-type=pristine",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            examples=["cache.url.pristine();"]),
+    "cache.url.query.remove":
+        FunctionDoc(
+            name="Cache Key Query Remove",
+            category="Cache Key Statement",
+            description="Drops the named query parameters from the cache key. A regex drops every parameter whose name matches. Can't be combined with cache.url.query.keep().",
+            syntax="cache.url.query.remove(\"a,b\") or cache.url.query.remove(/re/)",
+            maps_to="cachekey.so --exclude-params=a,b, or --exclude-match-params=re for a regex",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            parameters=[ParameterDoc("names", "string | regex", "Comma-separated names, case-sensitive, or a regex on the name")],
+            examples=["cache.url.query.remove(\"guid,ign-sf\");", "cache.url.query.remove(/^utm_/);"]),
+    "cache.url.query.keep":
+        FunctionDoc(
+            name="Cache Key Query Keep",
+            category="Cache Key Statement",
+            description="Keeps only the named query parameters in the cache key and drops the rest. Can't be combined with cache.url.query.remove().",
+            syntax="cache.url.query.keep(\"a,b\")",
+            maps_to="cachekey.so --include-params=a,b",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            parameters=[ParameterDoc("names", "string", "Comma-separated names, case-sensitive. Static: no {...} values.")],
+            examples=["cache.url.query.keep(\"term,media\");"]),
+    "cache.url.query.sort":
+        FunctionDoc(
+            name="Cache Key Query Sort",
+            category="Cache Key Statement",
+            description="Sorts the query parameters in the cache key, so parameter order doesn't split the cache.",
+            syntax="cache.url.query.sort()",
+            maps_to="cachekey.so --sort-params=true",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            examples=["cache.url.query.sort();"]),
+    "cache.url.query":
+        FunctionDoc(
+            name="Cache Key Query",
+            category="Cache Key Assignment",
+            description="Set to \"\" to drop the whole query string from the cache key. \"\" is the only value allowed. Can't be combined with cache.url.query.keep() or remove().",
+            syntax="cache.url.query = \"\"",
+            maps_to="cachekey.so --remove-all-params=true",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            examples=["cache.url.query = \"\";"]),
+    "cache.url.path":
+        FunctionDoc(
+            name="Cache Key Path",
+            category="Cache Key Assignment",
+            description="Set to \"\" to drop the URL path from the cache key. \"\" is the only value allowed.",
+            syntax="cache.url.path = \"\"",
+            maps_to="cachekey.so --remove-path=true",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            examples=["cache.url.path = \"\";"]),
+    "cache.key.add_headers":
+        FunctionDoc(
+            name="Cache Key Headers",
+            category="Cache Key Statement",
+            description="Adds the named request headers to the cache key. @ headers work, so a value set earlier in REMAP can be keyed on.",
+            syntax="cache.key.add_headers(\"H1,H2\")",
+            maps_to="cachekey.so --include-headers=H1,H2",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            parameters=[ParameterDoc("names", "string", "Comma-separated names, case-sensitive. Static: no {...} values.")],
+            examples=["cache.key.add_headers(\"X-Apple-Store-Front,@Prism-Country\");"]),
+    "cache.key.add_cookies":
+        FunctionDoc(
+            name="Cache Key Cookies",
+            category="Cache Key Statement",
+            description="Adds the named cookies to the cache key. A missing cookie is left out of the key.",
+            syntax="cache.key.add_cookies(\"c1,c2\")",
+            maps_to="cachekey.so --include-cookies=c1,c2",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            parameters=[ParameterDoc("names", "string", "Comma-separated names, case-sensitive. Static: no {...} values.")],
+            examples=["cache.key.add_cookies(\"itst,itre\");"]),
+    "cache.url.host":
+        FunctionDoc(
+            name="Cache Key Host",
+            category="Cache Key Assignment",
+            description="Replaces the scheme://host:port prefix of the cache key with a fixed string. Set it once.",
+            syntax="cache.url.host = \"h\"",
+            maps_to="cachekey.so --static-prefix=h",
+            usage_context="REMAP only. Not inside an if: cachekey.so flags are fixed at config load.",
+            examples=["cache.url.host = \"api.example.com\";"]),
+    "cache.key":
+        FunctionDoc(
+            name="Cache Key",
+            category="Cache Key Assignment",
+            description="+= adds a computed value to the key: the compiler copies it to a numbered @Prism-Key-N header and keys on that header. = \"\" drops every cache.url.* and cache.key.* statement before it, back to the default key.",
+            syntax="cache.key += \"<expr>\" or cache.key = \"\"",
+            maps_to="set-header @Prism-Key-N \"<expr>\" and cachekey.so --include-headers=@Prism-Key-N",
+            usage_context="REMAP only. += is allowed inside an if; = \"\" is not.",
+            examples=["cache.key += \"{inbound.req.@Prism-Country}\";", "cache.key = \"\";"]),
     "cidr":
         FunctionDoc(
             name="CIDR Network Function",
