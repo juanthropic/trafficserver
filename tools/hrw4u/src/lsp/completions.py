@@ -186,12 +186,12 @@ class CompletionBuilder:
         """Create completion item for sections."""
         documentation = cls.create_markdown_doc(
             f"**{section.value}** - HRW4U Section\n\n"
-            f"Maps to ATS hook: `{section.hook_name}`")
+            f"Maps to ATS hook: `{section.hook_name}`{section.hook_note}")
 
         return CompletionItem(
             label=section.value,
             kind=LSPCompletionItemKind.KEYWORD,
-            detail=f"Hook: {section.hook_name}",
+            detail=f"Hook: {section.hook_name}{section.hook_note}",
             documentation=documentation,
             insert_text=f"{section.value} {{\n\t$0\n}}",
             insert_text_format=2  # Snippet format
