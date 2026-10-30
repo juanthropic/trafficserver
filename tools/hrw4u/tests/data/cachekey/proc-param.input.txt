@@ -1,0 +1,29 @@
+procedure local::hdr($h) {
+    cache.key.headers.add("$h");
+}
+
+procedure local::cookie($c="session") {
+    cache.key.cookies.add("$c");
+}
+
+procedure local::pass($h) {
+    local::hdr($h);
+}
+
+procedure local::part($v) {
+    cache.key += "$v";
+}
+
+procedure local::no-path($p="") {
+    cache.url.path = "$p";
+}
+
+CACHEKEY {
+    local::hdr("X-Region");
+    local::hdr(X-Tenant);
+    local::cookie();
+    local::cookie(locale);
+    local::pass("@Geo-Country");
+    local::part("{geo.COUNTRY}");
+    local::no-path();
+}
