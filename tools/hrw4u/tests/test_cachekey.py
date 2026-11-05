@@ -19,7 +19,8 @@ from __future__ import annotations
 import pytest
 
 from hrw4u.cachekey import (
-    KEY_TYPE_FLAG, CacheKeyStatement, ConflictError, check_conflicts, merge, parse_assignment, parse_statement, render)
+    CACHEKEY_STATEMENTS, KEY_TYPE_FLAG, PRESENCE_STATEMENTS, CacheKeyStatement, ConflictError, check_conflicts, merge,
+    parse_assignment, parse_statement, render)
 from hrw4u.errors import SymbolResolutionError
 
 
@@ -242,7 +243,39 @@ class TestParseStatementErrors:
             ("cache.url.query.remove", ['"a b"'], "whitespace"),
             ("cache.key.headers.add", ['"a\\"b"'], "quote or backslash"),
             ("cache.key.headers.add", ['"a\\nb"'], "quote or backslash"),
+            ("cache.key.headers.exists", [], "takes at least one string argument"),
+            ("cache.key.cookies.exists", ['"{inbound.req.X}"'], "static"),
+            ("cache.key.headers.exists", ['"X:Y"'], "not a valid header name"),
+            ("cache.key.headers.exists", ['"@"'], "not a valid header name"),
+            ("cache.key.headers.exists", ['"@@X"'], "not a valid header name"),
+            ("cache.key.headers.exists", ['"X@Y"'], "not a valid header name"),
+            ("cache.key.cookies.exists", ['"@x"'], "not a valid header name"),
+            ("cache.key.cookies.exists", ['"a%b"'], "not a valid header name"),
+            ("cache.key.cookies.exists", ['"a=b"'], "not a valid header name"),
         ])
     def test_rejects(self, name: str, args: list[str], message: str) -> None:
         with pytest.raises(SymbolResolutionError, match=message):
             parse_statement(name, args)
+
+
+class TestPresence:
+
+    @pytest.mark.parametrize("name", ["cache.key.headers.exists", "cache.key.cookies.exists"])
+    def test_parses_like_a_list_statement(self, name: str) -> None:
+        assert parse_statement(name, ['"a"', '"B-c"']).items == ("a", "B-c")
+
+    def test_headers_take_an_at_header(self) -> None:
+        assert parse_statement("cache.key.headers.exists", ['"@Client-Id"']).items == ("@Client-Id",)
+
+    @pytest.mark.parametrize(
+        "name,header,cond", [
+            ("cache.key.headers.exists", "@Hrw4u-Header-X-Id", 'cond %{CLIENT-HEADER:X-Id} ="" [NOT]'),
+            ("cache.key.cookies.exists", "@Hrw4u-Cookie-X-Id", 'cond %{COOKIE:X-Id} ="" [NOT]'),
+        ])
+    def test_header_and_condition(self, name: str, header: str, cond: str) -> None:
+        presence = PRESENCE_STATEMENTS[name]
+        assert presence.header("X-Id") == header
+        assert presence.cond_line("X-Id") == cond
+
+    def test_no_flag_of_its_own(self) -> None:
+        assert not set(PRESENCE_STATEMENTS) & set(CACHEKEY_STATEMENTS)

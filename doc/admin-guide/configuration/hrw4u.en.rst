@@ -748,6 +748,8 @@ cache.url.canonical()                  --canonical-prefix=true                  
 cache.key.prefix = "p"                 --static-prefix=p                        Start the key with p, not host and port
 cache.key.headers.add("A", "B")        --include-headers=A,B                    Add these request headers
 cache.key.cookies.add("a", "b")        --include-cookies=a,b                    Add these cookies
+cache.key.headers.exists("A")          --include-headers=@Hrw4u-Header-A        Add whether the header is present
+cache.key.cookies.exists("a")          --include-headers=@Hrw4u-Cookie-a        Add whether the cookie is present
 cache.key += "{...}"                   --include-headers=@Hrw4u-Key-NN          Add a computed value
 ====================================== ======================================== =========================================
 
@@ -760,7 +762,8 @@ value.
 
 List arguments and ``cache.key.prefix`` are static strings, with no ``{...}``
 values. Lists take one name per argument. Query param and cookie names are
-case-sensitive; header names are not. ``keep()``, ``remove()`` and
+case-sensitive, except in ``cache.key.cookies.exists()``; header names are
+not. ``keep()``, ``remove()`` and
 ``query = ""`` can't be combined. A missing or empty header, cookie, or
 ``cache.key +=`` value adds nothing to the key.
 
@@ -778,6 +781,42 @@ compiles to::
        run-plugin "cachekey.so" "--key-type=cache_key,parent_selection_url" "--include-headers=@Hrw4u-Key-01"
 
 A `CACHEKEY` section allows at most 99 ``cache.key +=`` values.
+
+``cache.key.headers.exists()`` and ``cache.key.cookies.exists()`` key on
+whether each name is present, not on its value, so requests with different
+values share a key. A missing name, an empty header, and a cookie sent as
+``sid=`` all count as absent. For each name, the compiler adds a rule set that
+sets an ``@`` header to ``1`` when the name is present, and adds that header
+to the key. The header is named after the header or cookie, not numbered, so
+reordering or adding statements doesn't change the key::
+
+   CACHEKEY {
+       cache.key.headers.exists("X-User-Id");
+       cache.key.cookies.exists("session");
+   }
+
+compiles to::
+
+   cond %{REMAP_PSEUDO_HOOK} [AND]
+   cond %{CLIENT-HEADER:X-User-Id} ="" [NOT]
+       set-header @Hrw4u-Header-X-User-Id "1"
+
+   cond %{REMAP_PSEUDO_HOOK} [AND]
+   cond %{COOKIE:session} ="" [NOT]
+       set-header @Hrw4u-Cookie-session "1"
+
+   cond %{REMAP_PSEUDO_HOOK} [AND]
+       run-plugin "cachekey.so" "--key-type=cache_key,parent_selection_url" "--include-headers=@Hrw4u-Header-X-User-Id,@Hrw4u-Cookie-session"
+
+The presence rule sets run on every request, even for a name that only one
+branch tests: each branch's line keys only on the headers it lists. Names must
+be valid header names. A header name may start with ``@``, to test an ``@``
+header that `REMAP` sets.
+
+The cookie test is header_rewrite's ``%{COOKIE:...}``, which matches cookie
+names ignoring case, unlike ``--include-cookies``. So
+``cache.key.cookies.exists("sid")`` counts ``SID=1`` as present, and two
+names that differ only in case fail to compile.
 
 Keys that depend on the request
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
